@@ -64,6 +64,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     register,
     logout,
     isAuthenticated: !!user,
+    hasAIInsights: !!user?.hasAIInsights
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

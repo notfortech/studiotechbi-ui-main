@@ -14,6 +14,7 @@ export interface User {
   clientCode?: string;
   /** Client display name when user belongs to a client. */
   clientName?: string;
+  hasAIInsights?: boolean;
 }
 
 export interface AuthContextType {
