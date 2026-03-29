@@ -133,13 +133,8 @@ try {
 
 }
 
-catch (err) {
-
-  console.error(
-    "Power BI filter update failed:",
-    err
-  );
-
+catch {
+  /* ignore */
 }
 
 };

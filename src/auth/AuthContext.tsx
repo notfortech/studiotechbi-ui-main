@@ -33,23 +33,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   }, []);
 
   const login = async (email: string, password: string, role: 'accountant' | 'client') => {
-    try {
-      const response = await authService.login(email, password);
-      setUser(response.user);
-    } catch (error) {
-      console.error('Login failed:', error);
-      throw error;
-    }
+    const response = await authService.login(email, password);
+    setUser(response.user);
   };
 
   const register = async (name: string, email: string, password: string) => {
-    try {
-      const response = await authService.register(name, email, password);
-      setUser(response.user);
-    } catch (error) {
-      console.error('Sign up failed:', error);
-      throw error;
-    }
+    const response = await authService.register(name, email, password);
+    setUser(response.user);
   };
 
   const logout = () => {

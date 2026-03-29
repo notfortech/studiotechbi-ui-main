@@ -19,8 +19,8 @@ export const AdminReportsPage = () => {
       setLoading(true);
       const data = await apiService.get<EmbedResponse>('/powerbi/embed-token');
       setEmbedData(data);
-    } catch (error) {
-      console.error(error);
+    } catch {
+      /* ignore */
     } finally {
       setLoading(false);
     }

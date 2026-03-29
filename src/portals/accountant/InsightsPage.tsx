@@ -27,8 +27,8 @@ export function InsightsPage() {
 
       setInsights(data);
       setOpen(true);
-    } catch (err) {
-      console.error(err);
+    } catch {
+      /* ignore */
     } finally {
       setLoading(false);
     }
