@@ -6,7 +6,7 @@ class ApiService {
 
   constructor() {
     this.axiosInstance = axios.create({
-      baseURL: API_BASE_URL,
+      baseURL: API_BASE_URL || undefined,
       headers: {
         'Content-Type': 'application/json',
       },
@@ -18,6 +18,13 @@ class ApiService {
   private setupInterceptors(): void {
     this.axiosInstance.interceptors.request.use(
       (config) => {
+        if (import.meta.env.PROD && !config.baseURL && !this.axiosInstance.defaults.baseURL) {
+          return Promise.reject(
+            new Error(
+              'API base URL is not configured. Set VITE_API_BASE_URL to your App Service root including /api (e.g. https://your-api.azurewebsites.net/api) when building the frontend.'
+            )
+          );
+        }
         const token = localStorage.getItem('authToken');
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;

@@ -54,7 +54,7 @@ class AuthService {
     }
 
     try {
-      const response = await apiService.post<any>('auth/login', { email, password });
+      const response = await apiService.post<any>('Auth/login', { email, password });
       const authData = normalizeAuthPayload(response);
 
       const roleKey = (authData.user.role === 'accountant' || authData.user.role === 'client')
@@ -87,7 +87,7 @@ class AuthService {
     }
 
     try {
-      const response = await apiService.post<any>('auth/register', { name, email, password });
+      const response = await apiService.post<any>('Auth/register', { name, email, password });
       const authData = normalizeAuthPayload(response);
 
       const roleKey = (authData.user.role === 'accountant' || authData.user.role === 'client')

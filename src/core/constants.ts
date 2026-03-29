@@ -50,4 +50,10 @@ export const ROUTES = {
   },
 } as const;
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+/** Trimmed, no trailing slash. Empty if unset — set VITE_API_BASE_URL at build time for Azure SWA. */
+const rawApiBase = import.meta.env.VITE_API_BASE_URL;
+console.log("API BASE URL:", import.meta.env.VITE_API_BASE_URL);
+export const API_BASE_URL =
+  typeof rawApiBase === 'string' && rawApiBase.trim() !== ''
+    ? rawApiBase.trim().replace(/\/+$/, '')
+    : '';
