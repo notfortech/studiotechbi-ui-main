@@ -91,7 +91,6 @@ export const AccountantReportsPage = () => {
     selectedMonths,
     selectedAvailablePeriod,
   };
-  const { hasAIInsights } = useAuth();
   /** Progress bar: Check for updates, or loading embed / periods after accountant picks or changes client. */
   const reportProgressActive =
     generateLoading ||

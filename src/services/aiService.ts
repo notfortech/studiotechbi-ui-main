@@ -11,7 +11,7 @@ export interface InsightRequest {
 }
 
 export const getAIInsights = async (token: string, payload: InsightRequest) => {
-  const response = await fetch(`${API_BASE_URL}/api/ai/insights`, {
+  const response = await fetch(`${API_BASE_URL}/ai/insights`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

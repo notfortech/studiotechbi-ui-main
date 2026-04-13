@@ -50,9 +50,15 @@ export const ROUTES = {
   },
 } as const;
 
-/** Trimmed, no trailing slash. Empty if unset — set VITE_API_BASE_URL at build time for Azure SWA. */
+/** Trimmed, no trailing slash. Production: set VITE_API_BASE_URL at build time (e.g. Azure SWA). Dev: defaults to local API when unset. */
 const rawApiBase = import.meta.env.VITE_API_BASE_URL;
-export const API_BASE_URL =
+const trimmedFromEnv =
   typeof rawApiBase === 'string' && rawApiBase.trim() !== ''
     ? rawApiBase.trim().replace(/\/+$/, '')
     : '';
+export const API_BASE_URL =
+  trimmedFromEnv !== ''
+    ? trimmedFromEnv
+    : import.meta.env.DEV
+      ? 'http://localhost:5000/api'
+      : '';
