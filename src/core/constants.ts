@@ -1,5 +1,8 @@
 export const APP_NAME = 'StudioTechBI';
 
+/** Set to false to restore subscription gating from API (`user.hasAIInsights`). */
+export const TEMP_FORCE_AI_INSIGHTS_FOR_ALL = true;
+
 export const DRAWER_WIDTH = 260;
 export const DRAWER_WIDTH_COLLAPSED = 72;
 
@@ -39,26 +42,56 @@ export const ROUTES = {
     CLIENTS: '/accountant/clients',
     REPORTS: '/accountant/reports',
     INSIGHTS: '/accountant/insights',
+    DATA_STUDIO: '/accountant/data-studio',
   },
 
   CLIENT: {
     BASE: '/client',
     DASHBOARD: '/client/dashboard',
     REPORTS: '/client/reports',
+    INSIGHTS: '/client/insights',
+    DATA_STUDIO: '/client/data-studio',
     PROPOSITIONS: '/client/propositions',
     PROFILE: '/client/profile',
   },
 } as const;
 
-/** Trimmed, no trailing slash. Production: set VITE_API_BASE_URL at build time (e.g. Azure SWA). Dev: defaults to local API when unset. */
+/**
+ * Temporary local backend (dev only). When `true`, API calls use localhost even if
+ * `VITE_API_BASE_URL` points at Azure. Set to `false` (or remove) to restore normal env
+ * resolution. Production builds never use this branch (`import.meta.env.DEV` is false).
+ * Do not commit with `true` if your team relies on shared dev API from `.env`.
+ */
+const USE_LOCAL_API_IN_DEV = false;
+
+/**
+ * Default API host when `VITE_API_BASE_URL` is unset or still points at localhost.
+ * Kept in sync with `.github/workflows/azure-static-web-apps-thankful-rock-087464e00.yml`.
+ * Override with `VITE_API_BASE_URL` for a different environment (non-localhost).
+ */
+export const DEFAULT_AZURE_API_BASE_URL =
+  'https://studiotechbi-api-acekguf6eqajd2gg.australiasoutheast-01.azurewebsites.net/api';
+
+function trimApiBase(url: string): string {
+  return url.trim().replace(/\/+$/, '');
+}
+
+function isLocalhostApiBase(url: string): boolean {
+  return /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:\d+)?\b/i.test(url.trim());
+}
+
 const rawApiBase = import.meta.env.VITE_API_BASE_URL;
 const trimmedFromEnv =
-  typeof rawApiBase === 'string' && rawApiBase.trim() !== ''
-    ? rawApiBase.trim().replace(/\/+$/, '')
-    : '';
-export const API_BASE_URL =
-  trimmedFromEnv !== ''
-    ? trimmedFromEnv
-    : import.meta.env.DEV
-      ? 'http://localhost:5000/api'
-      : '';
+  typeof rawApiBase === 'string' && rawApiBase.trim() !== '' ? trimApiBase(rawApiBase) : '';
+
+const localDevApiBase = trimApiBase('http://localhost:5000/api');
+
+export const API_BASE_URL = (() => {
+  if (import.meta.env.DEV && USE_LOCAL_API_IN_DEV) {
+    return localDevApiBase;
+  }
+  if (trimmedFromEnv && !isLocalhostApiBase(trimmedFromEnv)) {
+    return trimmedFromEnv;
+  }
+  return trimApiBase(DEFAULT_AZURE_API_BASE_URL);
+})();

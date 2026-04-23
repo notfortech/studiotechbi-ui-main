@@ -1,25 +1,18 @@
-import { Box, Button, Stack, Typography } from '@mui/material';
-import { connectDataSource } from '../services/insightService';
+import { Box, Typography } from '@mui/material';
 
-const SOURCES: { type: string; label: string }[] = [
-  { type: 'onedrive', label: 'Connect OneDrive' },
-  { type: 'sharepoint', label: 'Connect SharePoint' },
-  { type: 'database', label: 'Connect Database' },
-];
-
+/**
+ * Insights is limited to the report dataset in storage—no user-managed external connectors in this view.
+ */
 export function DataSourceConnector() {
   return (
     <Box>
-      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-        Add a data source
+      <Typography variant="subtitle2" gutterBottom>
+        Report dataset (sample)
       </Typography>
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} flexWrap="wrap" useFlexGap>
-        {SOURCES.map(({ type, label }) => (
-          <Button key={type} variant="outlined" size="small" onClick={() => connectDataSource(type)}>
-            {label}
-          </Button>
-        ))}
-      </Stack>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 0 }}>
+        Insights shows a sample of your data from report storage in tabular, Excel-style form. Other data
+        sources cannot be connected here; only the report dataset is used.
+      </Typography>
     </Box>
   );
 }

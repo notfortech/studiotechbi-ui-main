@@ -3,7 +3,7 @@ import { Alert, Box, LinearProgress, Typography } from '@mui/material';
 const DEFAULT_MESSAGES = [
   'Fetching your data...',
   'Analyzing your data...',
-  'Setting up your dashboard...',
+  'Creating your dashboard...',
 ] as const;
 
 interface LoaderProps {

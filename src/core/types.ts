@@ -24,6 +24,8 @@ export interface AuthContextType {
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
+  /** Gated by API unless `TEMP_FORCE_AI_INSIGHTS_FOR_ALL` is enabled in constants. */
+  hasAIInsights: boolean;
 }
 
 export interface NavigationItem {

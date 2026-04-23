@@ -1,11 +1,10 @@
 import { Box, Typography } from '@mui/material';
-import type { OrchestratorResponse } from '../types';
+import type { InsightReport } from '../types';
 
 interface ReportViewerProps {
-  report: Pick<OrchestratorResponse, 'embedUrl' | 'reportId'>;
+  report: InsightReport;
 }
 
-/** Lightweight embed; swap for Power BI SDK when you need token lifecycle and events. */
 export function ReportViewer({ report }: ReportViewerProps) {
   if (!report.embedUrl) {
     return (
@@ -23,7 +22,6 @@ export function ReportViewer({ report }: ReportViewerProps) {
     <Box
       sx={{
         width: '100%',
-        minHeight: 480,
         border: 1,
         borderColor: 'divider',
         borderRadius: 1,
@@ -34,7 +32,7 @@ export function ReportViewer({ report }: ReportViewerProps) {
       <iframe
         title="Power BI report"
         src={report.embedUrl}
-        style={{ width: '100%', height: 520, border: 'none' }}
+        style={{ width: '100%', height: '600px', border: 'none' }}
         allow="fullscreen"
       />
     </Box>

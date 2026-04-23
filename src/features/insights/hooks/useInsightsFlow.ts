@@ -1,149 +1,134 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  fetchData,
   generateModels,
   getConnections,
   getModels,
-  normalizeModelsResponse,
-  parseOrchestratorPayload,
+  getReport,
+  importData,
+  listInsightModels,
+  normalizeInsightModelsResponse,
+  removeConnection,
   selectModel,
+  suggestTransformationsFromBlob,
 } from '../services/insightService';
-import type { DataConnection, ModelOptionWithEmbed, OrchestratorResponse } from '../types';
+import type {
+  DataConnection,
+  InsightModel,
+  InsightReport,
+  InsightsWithTemplatesResponse,
+  VerifiedTemplateMatch,
+} from '../types';
 
-const POLL_MS = 3000;
-const POLL_MAX_MS = 5 * 60 * 1000;
+const POLL_ATTEMPTS = 10;
+const POLL_INTERVAL_MS = 3000;
+
+function isModelActive(status: string | undefined): boolean {
+  return (status ?? '').toLowerCase() === 'active';
+}
 
 export type InsightsLoaderKind = 'idle' | 'fetch' | 'models' | 'orchestrator' | 'poll';
-
-function applyPayload(
-  data: unknown,
-  setModels: Dispatch<SetStateAction<ModelOptionWithEmbed[]>>,
-  setReport: Dispatch<SetStateAction<OrchestratorResponse | null>>
-): OrchestratorResponse {
-  const orch = parseOrchestratorPayload(data);
-  const list = normalizeModelsResponse(data);
-  if (list.length) setModels(list);
-
-  if (orch.reportId && orch.embedUrl) {
-    setReport(orch);
-    return orch;
-  }
-
-  for (const m of list) {
-    if (m.reportId && m.embedUrl) {
-      setReport({
-        reportId: m.reportId,
-        datasetId: m.datasetId,
-        embedUrl: m.embedUrl,
-        accessToken: m.accessToken,
-      });
-      return {
-        reportId: m.reportId,
-        datasetId: m.datasetId,
-        embedUrl: m.embedUrl,
-        accessToken: m.accessToken,
-      };
-    }
-  }
-
-  return orch;
-}
 
 export function useInsightsFlow(clientId: string | undefined) {
   const [connections, setConnections] = useState<DataConnection[]>([]);
   const [connectionId, setConnectionId] = useState('');
   const [selectedFile, setSelectedFile] = useState<{ path: string; name: string } | null>(null);
-  const [dataFetched, setDataFetched] = useState(false);
-  const [models, setModels] = useState<ModelOptionWithEmbed[]>([]);
-  const [selectedModel, setSelectedModel] = useState<ModelOptionWithEmbed | null>(null);
-  const [report, setReport] = useState<OrchestratorResponse | null>(null);
+  const [dataImported, setDataImported] = useState(false);
+  const [suggestions, setSuggestions] = useState<InsightsWithTemplatesResponse | null>(null);
+  const [models, setModels] = useState<InsightModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState<InsightModel | null>(null);
+  const [report, setReport] = useState<InsightReport | null>(null);
   const [loaderKind, setLoaderKind] = useState<InsightsLoaderKind>('idle');
   const [error, setError] = useState<string | null>(null);
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startedPollAt = useRef(0);
-
-  const stopPoll = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
+  const loadReport = useCallback(async (modelId: string) => {
+    const data = await getReport(modelId);
+    setReport(data);
   }, []);
 
+  const pollUntilReady = useCallback(
+    async (modelId: string) => {
+      if (!clientId) {
+        setError('Client id is required for status polling.');
+        return;
+      }
+      for (let i = 0; i < POLL_ATTEMPTS; i++) {
+        try {
+          const list = await listInsightModels(clientId);
+          setModels(list);
+          const model = list.find((m) => m.id === modelId);
+          if (model && isModelActive(model.status)) {
+            try {
+              await loadReport(modelId);
+            } catch {
+              setError('Could not load report embed.');
+            }
+            return;
+          }
+        } catch {
+          /* continue polling */
+        }
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      }
+      setError('Report is still processing. Try again or refresh this page later.');
+    },
+    [clientId, loadReport]
+  );
+
   const refreshConnections = useCallback(async () => {
+    if (!clientId) {
+      setConnections([]);
+      return;
+    }
     try {
       setError(null);
-      const list = await getConnections();
+      // eslint-disable-next-line no-console
+      console.log('[connections] fetch', { clientId });
+      const list = await getConnections(clientId);
+      // eslint-disable-next-line no-console
+      console.log('[connections] response', { count: list.length, list });
       setConnections(list);
     } catch {
       setError('Failed to load connections.');
     }
-  }, []);
+  }, [clientId]);
+
+  const handleRemoveConnection = useCallback(
+    async (id: string) => {
+      try {
+        setError(null);
+        // eslint-disable-next-line no-console
+        console.log('[connections] remove', { id, clientId });
+        await removeConnection(id);
+        if (connectionId === id) setConnectionId('');
+        await refreshConnections();
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error('[connections] remove failed', e);
+        setError('Failed to remove connection.');
+      }
+    },
+    [clientId, connectionId, refreshConnections]
+  );
 
   useEffect(() => {
-    refreshConnections();
+    void refreshConnections();
   }, [refreshConnections]);
 
-  useEffect(
-    () => () => {
-      stopPoll();
-    },
-    [stopPoll]
-  );
-
-  const pollOnce = useCallback(
-    async (cid: string): Promise<boolean> => {
-      const data = await getModels(cid);
-      const orch = applyPayload(data, setModels, setReport);
-      const done = !!(orch.reportId && orch.embedUrl);
-      return done;
-    },
-    []
-  );
-
-  const startPoll = useCallback(
-    (cid: string) => {
-      stopPoll();
-      startedPollAt.current = Date.now();
-      setLoaderKind('poll');
-      const run = async () => {
-        if (Date.now() - startedPollAt.current > POLL_MAX_MS) {
-          stopPoll();
-          setLoaderKind('idle');
-          setError('Timed out waiting for the report. Check the orchestrator or try again.');
-          return;
-        }
-        try {
-          const done = await pollOnce(cid);
-          if (done) {
-            stopPoll();
-            setLoaderKind('idle');
-          }
-        } catch {
-          /* keep polling */
-        }
-      };
-      void run();
-      pollRef.current = setInterval(() => void run(), POLL_MS);
-    },
-    [pollOnce, stopPoll]
-  );
-
-  const handleFetchData = async (path: string, name: string) => {
+  const handleImportData = async (path: string, name: string) => {
     if (!connectionId) return;
     setSelectedFile({ path, name });
-    setDataFetched(false);
+    setDataImported(false);
+    setSuggestions(null);
     setModels([]);
     setReport(null);
     setSelectedModel(null);
     setError(null);
     setLoaderKind('fetch');
     try {
-      await fetchData(connectionId, path);
-      setDataFetched(true);
+      await importData(connectionId, path);
+      setDataImported(true);
     } catch {
-      setError('Failed to fetch data. Check the connection and path.');
+      setError('Failed to load the sample. Check the dataset and table selection.');
     } finally {
       setLoaderKind('idle');
     }
@@ -157,54 +142,76 @@ export function useInsightsFlow(clientId: string | undefined) {
     setError(null);
     setLoaderKind('models');
     try {
-      const gen = await generateModels(clientId);
-      applyPayload(gen, setModels, setReport);
-      const latest = await getModels(clientId);
-      applyPayload(latest, setModels, setReport);
+      const withTemplates = await suggestTransformationsFromBlob({
+        clientId,
+        dataConnectionId: connectionId,
+        path: selectedFile?.path,
+      });
+      setSuggestions(withTemplates);
     } catch {
-      setError('Model generation failed.');
+      setError('Could not load data structure and verified template suggestions.');
+      setLoaderKind('idle');
+      return;
+    }
+    try {
+      const gen = await generateModels(clientId);
+      const fromGen = normalizeInsightModelsResponse(gen);
+      if (fromGen.length) setModels(fromGen);
+      const latest = await getModels(clientId);
+      const fromLatest = normalizeInsightModelsResponse(latest);
+      if (fromLatest.length) setModels(fromLatest);
+    } catch {
+      setError('Suggestions are shown, but model provisioning failed. You may need to run generate again.');
     } finally {
       setLoaderKind('idle');
     }
   };
 
-  const handleSelectModel = async (model: ModelOptionWithEmbed) => {
+  const handleSelectVerified = async (match: VerifiedTemplateMatch) => {
+    const model = models.find((m) => m.templateId === match.template.templateId);
+    if (!model) {
+      setError('No model is ready for that template yet. Run generate suggestions again.');
+      return;
+    }
+    await handleSelectModel(model);
+  };
+
+  const handleSelectModel = async (model: InsightModel) => {
     setSelectedModel(model);
+    setReport(null);
     setError(null);
     setLoaderKind('orchestrator');
     try {
-      const orch = await selectModel(model.id, model.templateId);
-      if (orch.reportId && orch.embedUrl) {
-        setReport(orch);
-        setLoaderKind('idle');
-        return;
-      }
-      if (orch.queued) {
-        if (clientId) startPoll(clientId);
-        else {
-          setLoaderKind('idle');
-          setError('Job queued, but client id is missing for status polling.');
-        }
-        return;
+      const res = await selectModel(model.id, model.templateId);
+      if (res.queued) {
+        setLoaderKind('poll');
+        await pollUntilReady(model.id);
+      } else {
+        await loadReport(model.id);
       }
       if (clientId) {
-        const latest = await getModels(clientId);
-        applyPayload(latest, setModels, setReport);
+        try {
+          const latest = await getModels(clientId);
+          const list = normalizeInsightModelsResponse(latest);
+          if (list.length) setModels(list);
+        } catch {
+          /* non-fatal */
+        }
       }
-      setLoaderKind('idle');
     } catch {
-      setError('Could not start report creation.');
+      setError('Could not create or load the report.');
+    } finally {
       setLoaderKind('idle');
     }
   };
 
   const loaderMessage =
     loaderKind === 'fetch'
-      ? 'Fetching your data...'
+      ? 'Loading sample from report storage...'
       : loaderKind === 'models'
-        ? 'Analyzing your data...'
+        ? 'Generating template-verified suggestions...'
         : loaderKind === 'orchestrator' || loaderKind === 'poll'
-          ? 'Setting up your dashboard...'
+          ? 'Building your report...'
           : '';
 
   return {
@@ -212,7 +219,8 @@ export function useInsightsFlow(clientId: string | undefined) {
     connectionId,
     setConnectionId,
     selectedFile,
-    dataFetched,
+    dataFetched: dataImported,
+    suggestions,
     models,
     selectedModel,
     report,
@@ -221,8 +229,10 @@ export function useInsightsFlow(clientId: string | undefined) {
     error,
     setError,
     refreshConnections,
-    handleFetchData,
+    handleRemoveConnection,
+    handleFetchData: handleImportData,
     handleGenerateModels,
     handleSelectModel,
+    handleSelectVerified,
   };
 }

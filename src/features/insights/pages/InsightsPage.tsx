@@ -1,81 +1,38 @@
-import {
-  Alert,
-  Box,
-  Button,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Paper,
-  Select,
-  type SelectChangeEvent,
-  Stack,
-  Step,
-  StepLabel,
-  Stepper,
-  Typography,
-} from '@mui/material';
+import { Alert, Box, Paper, Stack, Typography } from '@mui/material';
+import { useContext, useMemo } from 'react';
 import { useAuth } from '../../../auth/AuthContext';
+import { ClientViewContext } from '../../../layouts/client/ClientViewContext';
+import { BlobSampleTable } from '../components/BlobSampleTable';
 import { CopilotPanel } from '../components/CopilotPanel';
-import { DataSourceConnector } from '../components/DataSourceConnector';
-import { FileSelector } from '../components/FileSelector';
 import { Loader } from '../components/Loader';
-import { ReportViewer } from '../components/ReportViewer';
-import { useInsightsFlow } from '../hooks/useInsightsFlow';
+import { useSimpleInsights } from '../hooks/useSimpleInsights';
 
-const STEPS = [
-  'Connect source',
-  'Choose connection',
-  'Select file',
-  'Fetch data',
-  'Generate models',
-  'Pick template',
-  'View report',
-];
-
-function computeActiveStep(params: {
-  connectionsCount: number;
-  connectionId: string;
-  dataFetched: boolean;
-  modelsCount: number;
-  hasEmbed: boolean;
-}): number {
-  const { connectionsCount, connectionId, dataFetched, modelsCount, hasEmbed } = params;
-  if (hasEmbed) return 6;
-  if (modelsCount > 0) return 5;
-  if (dataFetched) return 4;
-  if (connectionId) return 3;
-  if (connectionsCount > 0) return 2;
-  return 0;
+function resolveReportClientCode(
+  user: { role?: string; clientCode?: string; userType?: number } | null,
+  clientView: { accountingFirmMode?: boolean; selectedClientCode?: string } | undefined
+): string | undefined {
+  if (!user) return undefined;
+  const accounting =
+    user.role === 'client' && clientView?.accountingFirmMode && user.userType !== 0;
+  if (accounting && clientView?.selectedClientCode) {
+    return clientView.selectedClientCode;
+  }
+  return user.clientCode;
 }
 
 export function InsightsPage() {
-  const { user } = useAuth();
+  const { user, hasAIInsights } = useAuth();
+  const clientView = useContext(ClientViewContext);
   const clientId = user?.clientCode || user?.id;
+  const reportClientCode = useMemo(
+    () => resolveReportClientCode(user, clientView),
+    [user, clientView]
+  );
+  const flow = useSimpleInsights(clientId, reportClientCode);
 
-  const flow = useInsightsFlow(clientId);
-
-  if (!user?.hasAIInsights) {
+  if (!hasAIInsights) {
     return null;
   }
-
-  const busy =
-    flow.loaderKind === 'fetch' ||
-    flow.loaderKind === 'models' ||
-    flow.loaderKind === 'orchestrator' ||
-    flow.loaderKind === 'poll';
-
-  const activeStep = computeActiveStep({
-    connectionsCount: flow.connections.length,
-    connectionId: flow.connectionId,
-    dataFetched: flow.dataFetched,
-    modelsCount: flow.models.length,
-    hasEmbed: !!(flow.report?.embedUrl && flow.report?.reportId),
-  });
-
-  const handleConnectionChange = (e: SelectChangeEvent<string>) => {
-    flow.setConnectionId(e.target.value);
-    flow.setError(null);
-  };
 
   return (
     <Box>
@@ -83,102 +40,55 @@ export function InsightsPage() {
         Insights
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Connect data, choose a file, and let the service prepare a Power BI report—without loading raw data
-        in the browser.
+        When you have an active report, a read-only sample of the data (up to 100 rows) is shown with Copilot
+        suggestions for possible dashboard templates.
       </Typography>
 
-      <Stepper activeStep={activeStep} alternativeLabel sx={{ mb: 3 }}>
-        {STEPS.map((label) => (
-          <Step key={label}>
-            <StepLabel>{label}</StepLabel>
-          </Step>
-        ))}
-      </Stepper>
-
       {flow.error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => flow.setError(null)}>
+        <Alert severity="error" sx={{ mb: 2 }}>
           {flow.error}
         </Alert>
       )}
 
-      {busy && flow.loaderMessage && <Loader message={flow.loaderMessage} variant="banner" />}
+      {flow.loading && <Loader message="Loading insights…" variant="banner" />}
 
-      <Stack direction={{ xs: 'column', md: 'row' }} alignItems="flex-start" spacing={0}>
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Stack spacing={3}>
-            <Paper variant="outlined" sx={{ p: 2 }}>
-              <Stack spacing={2}>
-                <DataSourceConnector />
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Button size="small" variant="text" onClick={() => flow.refreshConnections()}>
-                    Refresh connections
-                  </Button>
-                </Stack>
-                <FormControl fullWidth size="small" disabled={busy}>
-                  <InputLabel id="insights-conn-label">Active connection</InputLabel>
-                  <Select
-                    labelId="insights-conn-label"
-                    label="Active connection"
-                    value={flow.connectionId}
-                    onChange={handleConnectionChange}
-                  >
-                    <MenuItem value="">
-                      <em>Select a connection</em>
-                    </MenuItem>
-                    {flow.connections.map((c) => (
-                      <MenuItem key={c.id} value={c.id}>
-                        {c.name} ({c.type})
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Stack>
-            </Paper>
+      {!flow.loading && !flow.hasActiveReport && !flow.error && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          There is no active report for your account yet. Open Reports to configure or generate a report; then
+          return here to see a data sample and template ideas.
+        </Alert>
+      )}
 
-            <Paper variant="outlined" sx={{ p: 2 }}>
-              <FileSelector
-                connectionId={flow.connectionId}
-                onFileLoaded={flow.handleFetchData}
-                disabled={busy}
-              />
-              {flow.selectedFile && flow.dataFetched && (
-                <Typography variant="caption" color="success.main" display="block" sx={{ mt: 1 }}>
-                  Loaded: {flow.selectedFile.name}
-                </Typography>
-              )}
-            </Paper>
+      {flow.suggestionsError && flow.hasActiveReport && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {flow.suggestionsError}
+        </Alert>
+      )}
 
+      {!flow.loading && flow.hasActiveReport && (
+        <Stack direction={{ xs: 'column', md: 'row' }} alignItems="flex-start" spacing={0}>
+          <Box sx={{ flex: 1, minWidth: 0, pr: { md: 0 } }}>
             <Paper variant="outlined" sx={{ p: 2 }}>
               <Typography variant="subtitle2" gutterBottom>
-                AI report templates
+                Data sample (read-only)
               </Typography>
-              <Button
-                variant="contained"
-                disabled={busy || !flow.dataFetched || !clientId}
-                onClick={() => flow.handleGenerateModels()}
-              >
-                Generate model options
-              </Button>
-              {!clientId && (
-                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-                  Sign in with a client-linked account to generate models.
+              {flow.activeReport && (
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+                  Client: {flow.activeReport.clientCode}
                 </Typography>
               )}
+              <BlobSampleTable data={flow.sample} error={flow.sampleError} />
             </Paper>
+          </Box>
 
-            {flow.report?.embedUrl && (
-              <Paper variant="outlined" sx={{ p: 2 }}>
-                <Typography variant="subtitle2" gutterBottom>
-                  Report
-                </Typography>
-                <ReportViewer report={flow.report} />
-              </Paper>
-            )}
-          </Stack>
-        </Box>
-
-        <CopilotPanel models={flow.models} onSelectModel={flow.handleSelectModel} busy={busy} />
-      </Stack>
+          <CopilotPanel
+            verifiedTemplates={flow.suggestions?.verifiedTemplates ?? []}
+            provisionedModels={[]}
+            readOnly
+            busy={false}
+          />
+        </Stack>
+      )}
     </Box>
   );
 }

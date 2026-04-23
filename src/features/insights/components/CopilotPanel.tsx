@@ -1,14 +1,29 @@
 import { Box, Stack, Typography } from '@mui/material';
-import type { ModelOptionWithEmbed } from '../types';
-import { ModelCard } from './ModelCard';
+import type { InsightModel, VerifiedTemplateMatch } from '../types';
+import { VerifiedTemplateCard } from './VerifiedTemplateCard';
 
 interface CopilotPanelProps {
-  models: ModelOptionWithEmbed[];
-  onSelectModel: (model: ModelOptionWithEmbed) => void;
+  /** Template-verified dashboard options (only from the insights API). */
+  verifiedTemplates: VerifiedTemplateMatch[];
+  /** Server models (used to know if a template can be applied via `selectModel`). */
+  provisionedModels: InsightModel[];
+  onSelectVerified?: (match: VerifiedTemplateMatch) => void;
   busy?: boolean;
+  /** No template actions; browse-only. */
+  readOnly?: boolean;
 }
 
-export function CopilotPanel({ models, onSelectModel, busy }: CopilotPanelProps) {
+function hasProvisionedModel(models: InsightModel[], templateId: string): boolean {
+  return models.some((m) => m.templateId === templateId);
+}
+
+export function CopilotPanel({
+  verifiedTemplates,
+  provisionedModels,
+  onSelectVerified,
+  busy,
+  readOnly,
+}: CopilotPanelProps) {
   return (
     <Box
       sx={{
@@ -25,16 +40,27 @@ export function CopilotPanel({ models, onSelectModel, busy }: CopilotPanelProps)
         Copilot
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Suggested report templates from your data model. Pick one to build your Power BI report.
+        {readOnly
+          ? 'Possible dashboard templates for your data (preview only). Suggestions are AI-assisted and verified on the server.'
+          : 'Dashboard templates you can use—each option uses a real template ID from your catalog. Suggestions are AI-assisted, then matched and verified on the server before they appear here.'}
       </Typography>
-      {models.length === 0 && (
+      {verifiedTemplates.length === 0 && (
         <Typography variant="body2" color="text.secondary">
-          No suggestions yet. Connect a file and generate models to see options here.
+          {readOnly
+            ? 'No template suggestions yet.'
+            : 'No suggestions yet. Load the sample, then run generate suggestions to see verified template options.'}
         </Typography>
       )}
       <Stack spacing={2}>
-        {models.map((m) => (
-          <ModelCard key={m.id} model={m} onUse={onSelectModel} disabled={busy} />
+        {verifiedTemplates.map((m, i) => (
+          <VerifiedTemplateCard
+            key={`${m.template.templateId}-${i}`}
+            match={m}
+            onUse={onSelectVerified}
+            readOnly={readOnly}
+            disabled={busy}
+            modelMissing={readOnly ? false : !hasProvisionedModel(provisionedModels, m.template.templateId)}
+          />
         ))}
       </Stack>
     </Box>

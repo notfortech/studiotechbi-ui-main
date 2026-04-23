@@ -28,6 +28,7 @@ import { AccountantDashboard } from '../portals/accountant/AccountantDashboard';
 import { AccountantClientsPage } from '../portals/accountant/ClientsPage';
 import { AccountantReportsPage } from '../portals/accountant/ReportsPage';
 import { InsightsPage } from '../portals/accountant/InsightsPage';
+import { ModelingStudioPage } from '../features/modeling-studio/pages/ModelingStudioPage';
 import { ClientDashboard } from '../portals/client/ClientDashboard';
 import { ClientReportsPage } from '../portals/client/ReportsPage';
 import { PropositionsPage } from '../portals/client/PropositionsPage';
@@ -161,6 +162,10 @@ export const routes: RouteObject[] = [
         path: 'insights',
         element: <InsightsPage />,
       },
+      {
+        path: 'data-studio',
+        element: <ModelingStudioPage />,
+      },
     ],
   },
   {
@@ -190,6 +195,14 @@ export const routes: RouteObject[] = [
       {
         path: 'profile',
         element: <ProfilePage />,
+      },
+      {
+        path: 'insights',
+        element: <InsightsPage />,
+      },
+      {
+        path: 'data-studio',
+        element: <ModelingStudioPage />,
       },
     ],
   },

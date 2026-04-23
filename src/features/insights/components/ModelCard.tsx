@@ -1,15 +1,17 @@
 import { Box, Button, Chip, Stack, Typography } from '@mui/material';
-import type { ModelOptionWithEmbed } from '../types';
+import type { InsightModel } from '../types';
 
 interface ModelCardProps {
-  model: ModelOptionWithEmbed;
-  onUse: (model: ModelOptionWithEmbed) => void;
+  model: InsightModel;
+  onUse: (model: InsightModel) => void;
   disabled?: boolean;
 }
 
 export function ModelCard({ model, onUse, disabled }: ModelCardProps) {
-  const preview = model.schema.columns.slice(0, 8);
-  const rest = model.schema.columns.length - preview.length;
+  const columns = model.schema?.columns ?? [];
+  const preview = columns.slice(0, 8);
+  const rest = columns.length - preview.length;
+  const statusLabel = model.status ? model.status : '—';
 
   return (
     <Box
@@ -23,17 +25,20 @@ export function ModelCard({ model, onUse, disabled }: ModelCardProps) {
     >
       <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1} mb={1}>
         <Typography variant="subtitle2" noWrap title={model.templateId}>
-          Template: {model.templateId}
+          Verified template: {model.templateId}
         </Typography>
-        <Chip
-          size="small"
-          label={
-            model.confidence <= 1
-              ? `${Math.round(model.confidence * 100)}% conf.`
-              : `${Math.round(model.confidence)} score`
-          }
-          variant="outlined"
-        />
+        <Stack direction="row" spacing={0.5} flexShrink={0}>
+          <Chip size="small" label={statusLabel} variant="outlined" />
+          <Chip
+            size="small"
+            label={
+              model.confidence <= 1
+                ? `${Math.round(model.confidence * 100)}%`
+                : `${Math.round(model.confidence)}`
+            }
+            variant="outlined"
+          />
+        </Stack>
       </Stack>
       <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
         Columns
@@ -46,7 +51,7 @@ export function ModelCard({ model, onUse, disabled }: ModelCardProps) {
         {preview.length === 0 && <Typography variant="body2">—</Typography>}
       </Stack>
       <Button variant="contained" size="small" disabled={disabled} onClick={() => onUse(model)}>
-        Use this
+        Use this dashboard
       </Button>
     </Box>
   );

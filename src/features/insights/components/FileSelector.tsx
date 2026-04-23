@@ -69,7 +69,7 @@ export function FileSelector({ connectionId, onFileLoaded, disabled }: FileSelec
   if (!connectionId) {
     return (
       <Typography variant="body2" color="text.secondary">
-        Choose a connection to browse files.
+        Select an active report dataset above to list sample tables.
       </Typography>
     );
   }
@@ -77,7 +77,7 @@ export function FileSelector({ connectionId, onFileLoaded, disabled }: FileSelec
   return (
     <Box>
       <Typography variant="subtitle2" gutterBottom>
-        Select a file or table
+        Tabular sample (report storage)
       </Typography>
       {error && (
         <Typography variant="body2" color="error" sx={{ mb: 1 }}>
@@ -85,10 +85,10 @@ export function FileSelector({ connectionId, onFileLoaded, disabled }: FileSelec
         </Typography>
       )}
       <FormControl fullWidth size="small" sx={{ mb: 2 }} disabled={disabled || loading}>
-        <InputLabel id="insights-file-select-label">File</InputLabel>
+        <InputLabel id="insights-file-select-label">Table</InputLabel>
         <Select
           labelId="insights-file-select-label"
-          label="File"
+          label="Table"
           value={selectedPath}
           onChange={handleSelectChange}
         >
@@ -118,10 +118,11 @@ export function FileSelector({ connectionId, onFileLoaded, disabled }: FileSelec
         disabled={disabled || loading || !selectedPath}
         onClick={handleConfirm}
       >
-        Load from backend
+        Load sample
       </Button>
       <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 1 }}>
-        Data is fetched and stored server-side; nothing is downloaded into the browser.
+        The sample is loaded server-side from blob report storage; the browser does not download full raw
+        tables—only identifiers and, where shown, a tabular preview.
       </Typography>
     </Box>
   );

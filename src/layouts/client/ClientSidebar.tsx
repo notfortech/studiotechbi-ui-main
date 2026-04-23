@@ -13,6 +13,8 @@ import {
 import {
   Dashboard as DashboardIcon,
   Assessment as AssessmentIcon,
+  Insights as InsightsIcon,
+  HubOutlined as DataStudioIcon,
   Description as DescriptionIcon,
   AccountCircle as ProfileIcon,
 } from '@mui/icons-material';
@@ -27,6 +29,8 @@ interface ClientSidebarProps {
 const navigationItems: NavigationItem[] = [
   { id: 'dashboard', title: 'Dashboard', path: ROUTES.CLIENT.DASHBOARD, icon: <DashboardIcon /> },
   { id: 'reports', title: 'Reports', path: ROUTES.CLIENT.REPORTS, icon: <AssessmentIcon /> },
+  { id: 'insights', title: 'Insights', path: ROUTES.CLIENT.INSIGHTS, icon: <InsightsIcon /> },
+  { id: 'data-studio', title: 'Data studio', path: ROUTES.CLIENT.DATA_STUDIO, icon: <DataStudioIcon /> },
   { id: 'propositions', title: 'Propositions', path: ROUTES.CLIENT.PROPOSITIONS, icon: <DescriptionIcon /> },
   { id: 'profile', title: 'Profile', path: ROUTES.CLIENT.PROFILE, icon: <ProfileIcon /> },
 ];
