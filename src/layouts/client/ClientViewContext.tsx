@@ -18,7 +18,7 @@ interface ClientViewContextValue {
   setSelectedClientCode: (clientCode: string) => void;
 }
 
-const ClientViewContext = createContext<ClientViewContextValue | undefined>(undefined);
+export const ClientViewContext = createContext<ClientViewContextValue | undefined>(undefined);
 
 export const useClientView = () => {
   const ctx = useContext(ClientViewContext);
