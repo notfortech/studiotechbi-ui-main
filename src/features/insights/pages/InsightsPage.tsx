@@ -1,6 +1,7 @@
 import {
   Alert,
   Box,
+  Button,
   FormControl,
   InputLabel,
   MenuItem,
@@ -14,11 +15,13 @@ import { useContext, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../auth/AuthContext';
 import { ClientViewContext } from '../../../layouts/client/ClientViewContext';
+import { ROUTES } from '../../../core/constants';
 import { getAccountantClients, type AccountantClient } from '../../../services/reportService';
 import { BlobSampleTable } from '../components/BlobSampleTable';
 import { CopilotPanel } from '../components/CopilotPanel';
 import { Loader } from '../components/Loader';
 import { useSimpleInsights } from '../hooks/useSimpleInsights';
+import { ProposedModelCard } from '../components/ProposedModelCard';
 
 /**
  * Client code to resolve report + blob (`GET /reports/available/{clientCode}` and insights-engine).
@@ -101,6 +104,13 @@ export function InsightsPage() {
     useSelectedClientForApis
   );
 
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  const generationCost = 1_000;
+
+  useEffect(() => {
+    setSelectedTemplateId('');
+  }, [reportClientCode, flow.modelSuggestions?.verifiedTemplates?.length]);
+
   const handleAccountantClientChange = (e: SelectChangeEvent<string>) => {
     setAccountantClientCode(e.target.value);
   };
@@ -112,6 +122,12 @@ export function InsightsPage() {
   const needsClientPick = explicitClientOnly && !reportClientCode;
   const showNoReportYet =
     !flow.loading && !flow.hasActiveReport && !flow.error && !needsClientPick;
+  const sampleLoadedOk = !!flow.sample && !flow.sampleError;
+  const canGenerate =
+    sampleLoadedOk &&
+    !!flow.resolvedBlob?.clientId &&
+    !!flow.resolvedBlob?.blobPath &&
+    !flow.suggesting;
 
   return (
     <Box>
@@ -193,14 +209,46 @@ export function InsightsPage() {
                 </Typography>
               )}
               <BlobSampleTable data={flow.sample} error={flow.sampleError} />
+
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 2 }}>
+                <Button
+                  variant="contained"
+                  disabled={!canGenerate}
+                  onClick={async () => {
+                    if (!canGenerate) {
+                      return;
+                    }
+                    await flow.generateAiInsights();
+                  }}
+                >
+                  {flow.suggesting
+                    ? 'Generating…'
+                    : `Generate AI Insights (${generationCost.toLocaleString()} credits)`}
+                </Button>
+              </Stack>
+
+              {flow.modelSuggestions?.proposedModels?.length ? (
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Dashboards possible
+                  </Typography>
+                  <Stack spacing={1.5}>
+                    {flow.modelSuggestions.proposedModels.map((m, idx) => (
+                      <ProposedModelCard key={m.id ?? `${m.templateId ?? 'm'}-${idx}`} model={m} />
+                    ))}
+                  </Stack>
+                </Box>
+              ) : null}
             </Paper>
           </Box>
 
           <CopilotPanel
-            verifiedTemplates={flow.suggestions?.verifiedTemplates ?? []}
+            verifiedTemplates={flow.modelSuggestions?.verifiedTemplates ?? []}
             provisionedModels={[]}
-            readOnly
-            busy={false}
+            busy={flow.suggesting}
+            selectable
+            selectedTemplateId={selectedTemplateId}
+            onSelectTemplate={(m) => setSelectedTemplateId(m.template.templateId)}
           />
         </Stack>
       )}

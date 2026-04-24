@@ -11,6 +11,10 @@ interface VerifiedTemplateCardProps {
   disabled?: boolean;
   /** Hide actions; list is view-only. */
   readOnly?: boolean;
+  /** Allow selecting the template (no backend action). */
+  selectable?: boolean;
+  selected?: boolean;
+  onSelect?: (match: VerifiedTemplateMatch) => void;
 }
 
 export function VerifiedTemplateCard({
@@ -19,6 +23,9 @@ export function VerifiedTemplateCard({
   modelMissing,
   disabled,
   readOnly,
+  selectable,
+  selected,
+  onSelect,
 }: VerifiedTemplateCardProps) {
   const { template, matchScore, matchReasons } = match;
   const isCatalogOnly =
@@ -26,12 +33,38 @@ export function VerifiedTemplateCard({
 
   return (
     <Box
+      role={selectable ? 'button' : undefined}
+      tabIndex={selectable ? 0 : undefined}
+      onClick={
+        selectable && !disabled
+          ? () => {
+              onSelect?.(match);
+            }
+          : undefined
+      }
+      onKeyDown={
+        selectable && !disabled
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelect?.(match);
+              }
+            }
+          : undefined
+      }
       sx={{
         p: 2,
         borderRadius: 1,
         border: 1,
-        borderColor: 'divider',
+        borderColor: selected ? 'primary.main' : 'divider',
         bgcolor: 'background.paper',
+        cursor: selectable ? 'pointer' : 'default',
+        outline: 'none',
+        '&:focus-visible': selectable
+          ? {
+              boxShadow: (t) => `0 0 0 3px ${t.palette.primary.main}33`,
+            }
+          : undefined,
       }}
     >
       {isCatalogOnly && (

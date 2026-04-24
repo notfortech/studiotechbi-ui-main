@@ -6,6 +6,8 @@ import { unwrapApiResponse } from '../../../services/adminApiTypes';
 import type {
   BlobDataSample,
   InsightsResolvedBlob,
+  ModelsSuggestFromBlobResponse,
+  ProposedModel,
   DataConnection,
   FileItem,
   InsightModel,
@@ -323,6 +325,40 @@ export function parseInsightsWithTemplatesResponse(raw: unknown): InsightsWithTe
   return { insights, verifiedTemplates };
 }
 
+function normalizeProposedModel(raw: unknown): ProposedModel | null {
+  const o = asRecord(raw);
+  if (!o) return null;
+  const schemaObj = asRecord(o.schema);
+  const cols =
+    schemaObj && Array.isArray(schemaObj.columns)
+      ? (schemaObj.columns as unknown[]).filter((c): c is string => typeof c === 'string')
+      : undefined;
+  return {
+    ...o,
+    id: str(o, 'id', 'modelId'),
+    name: str(o, 'name', 'title', 'modelName'),
+    description: str(o, 'description', 'summary'),
+    confidence: num(o, 'confidence', 'score'),
+    templateId: str(o, 'templateId', 'template_id'),
+    columns: Array.isArray(o.columns)
+      ? (o.columns as unknown[]).filter((c): c is string => typeof c === 'string')
+      : cols,
+  } as ProposedModel;
+}
+
+export function parseModelsSuggestFromBlobResponse(raw: unknown): ModelsSuggestFromBlobResponse {
+  const u = unwrapApiResponse(raw as ApiResponse<unknown>);
+  const o = asRecord(u);
+  if (!o) return { proposedModels: [], verifiedTemplates: [] };
+  const pmRaw = unwrapList<unknown>(u, ['proposedModels', 'models', 'items', 'options']);
+  const proposedModels = pmRaw.map(normalizeProposedModel).filter((m): m is ProposedModel => m !== null);
+  const vtRaw = unwrapList<unknown>(u, ['verifiedTemplates', 'templates']);
+  const verifiedTemplates = vtRaw
+    .map(normalizeVerifiedTemplateMatch)
+    .filter((m): m is VerifiedTemplateMatch => m !== null);
+  return { proposedModels, verifiedTemplates };
+}
+
 /**
  * POST /api/insights-engine/transformations/suggest — optional body for non-blob flows.
  */
@@ -366,6 +402,29 @@ export async function suggestTransformationsFromBlob(params: {
     body
   );
   return parseInsightsWithTemplatesResponse(unwrapApiResponse(raw));
+}
+
+/**
+ * POST /api/insights-engine/models/suggest-from-blob
+ * Returns proposed dashboard models + verified template matches.
+ */
+export async function suggestModelsFromBlob(params: {
+  clientId: string;
+  blobPath: string;
+  useSelectedClient?: boolean;
+}): Promise<ModelsSuggestFromBlobResponse> {
+  const body: Record<string, unknown> = {
+    clientId: params.clientId,
+    blobPath: params.blobPath,
+  };
+  if (params.useSelectedClient) body.useSelectedClient = true;
+  const raw = await apiService.post<ApiResponse<ModelsSuggestFromBlobResponse> | ModelsSuggestFromBlobResponse>(
+    'insights-engine/models/suggest-from-blob',
+    body
+  );
+  const env = isApiEnvelopeFailure(raw);
+  if (env.failed) throw new Error(env.message);
+  return parseModelsSuggestFromBlobResponse(raw);
 }
 
 const BLOB_SAMPLE_MAX = 100;

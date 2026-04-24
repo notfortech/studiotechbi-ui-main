@@ -11,6 +11,10 @@ interface CopilotPanelProps {
   busy?: boolean;
   /** No template actions; browse-only. */
   readOnly?: boolean;
+  /** Allow picking a template for Generate AI Insights. */
+  selectable?: boolean;
+  selectedTemplateId?: string;
+  onSelectTemplate?: (match: VerifiedTemplateMatch) => void;
 }
 
 function hasProvisionedModel(models: InsightModel[], templateId: string): boolean {
@@ -23,6 +27,9 @@ export function CopilotPanel({
   onSelectVerified,
   busy,
   readOnly,
+  selectable,
+  selectedTemplateId,
+  onSelectTemplate,
 }: CopilotPanelProps) {
   return (
     <Box
@@ -58,6 +65,9 @@ export function CopilotPanel({
             match={m}
             onUse={onSelectVerified}
             readOnly={readOnly}
+            selectable={selectable}
+            selected={selectedTemplateId === m.template.templateId}
+            onSelect={onSelectTemplate}
             disabled={busy}
             modelMissing={readOnly ? false : !hasProvisionedModel(provisionedModels, m.template.templateId)}
           />

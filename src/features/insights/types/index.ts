@@ -87,3 +87,22 @@ export interface InsightsResolvedBlob {
   /** Blob key/path for POST `suggest-from-blob` body `path`. */
   blobPath: string;
 }
+
+/** Proposed dashboard/model option returned from insights-engine models suggest. */
+export interface ProposedModel {
+  id?: string;
+  name?: string;
+  description?: string;
+  confidence?: number;
+  /** Optional related template id when backend ties model to a template. */
+  templateId?: string;
+  /** Optional columns/features used to build the suggestion. */
+  columns?: string[];
+  [key: string]: unknown;
+}
+
+/** Payload under `data` for POST /insights-engine/models/suggest-from-blob. */
+export interface ModelsSuggestFromBlobResponse {
+  proposedModels: ProposedModel[];
+  verifiedTemplates: VerifiedTemplateMatch[];
+}

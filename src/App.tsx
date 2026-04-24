@@ -6,13 +6,35 @@ import { routes } from './core/routes';
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#667eea',
+      // Royal purple
+      main: '#6D28D9',
+      dark: '#5B21B6',
+      light: '#8B5CF6',
     },
     secondary: {
-      main: '#764ba2',
+      // Warm yellow / amber
+      main: '#F59E0B',
+      dark: '#D97706',
+      light: '#FBBF24',
     },
     background: {
       default: '#f5f7fa',
+    },
+    text: {
+      // Softer than pure black for a modern feel.
+      primary: '#111827', // slate-900
+      secondary: '#475569', // slate-600
+    },
+  },
+  components: {
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          textTransform: 'none',
+          fontWeight: 600,
+          borderRadius: 10,
+        },
+      },
     },
   },
   typography: {

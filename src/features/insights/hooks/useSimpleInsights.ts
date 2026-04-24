@@ -8,9 +8,9 @@ import {
   formatInsightsApiError,
   getReportBlobDataSample,
   resolveBlobForReportInsights,
-  suggestTransformationsFromBlob,
+  suggestModelsFromBlob,
 } from '../services/insightService';
-import type { BlobDataSample, InsightsWithTemplatesResponse } from '../types';
+import type { BlobDataSample, ModelsSuggestFromBlobResponse } from '../types';
 
 function isActiveReport(c: AvailableReportConfig | null | undefined): c is AvailableReportConfig {
   if (!c?.clientCode) return false;
@@ -52,35 +52,39 @@ export function useSimpleInsights(
   const [activeReport, setActiveReport] = useState<AvailableReportConfig | null>(null);
   const [sample, setSample] = useState<BlobDataSample | null>(null);
   const [sampleError, setSampleError] = useState<string | null>(null);
-  const [suggestions, setSuggestions] = useState<InsightsWithTemplatesResponse | null>(null);
+  const [resolvedBlob, setResolvedBlob] = useState<{ clientId: string; blobPath: string } | null>(null);
+  const [modelSuggestions, setModelSuggestions] = useState<ModelsSuggestFromBlobResponse | null>(null);
   const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
 
   const load = useCallback(async () => {
     if (!clientId) {
       setLoading(false);
       setActiveReport(null);
       setSample(null);
-      setSuggestions(null);
+      setModelSuggestions(null);
       return;
     }
     if (explicitClientOnly && !reportClientCode) {
       setLoading(false);
       setActiveReport(null);
       setSample(null);
-      setSuggestions(null);
+      setModelSuggestions(null);
       return;
     }
     setLoading(true);
     setError(null);
     setSampleError(null);
     setSuggestionsError(null);
+    setResolvedBlob(null);
+    setModelSuggestions(null);
     const us = useSelectedClientForApis;
     try {
       const config = await resolveReportConfig(reportClientCode, explicitClientOnly, us);
       if (!isActiveReport(config)) {
         setActiveReport(null);
         setSample(null);
-        setSuggestions(null);
+        setModelSuggestions(null);
         setLoading(false);
         return;
       }
@@ -90,40 +94,21 @@ export function useSimpleInsights(
       let resolved: Awaited<ReturnType<typeof resolveBlobForReportInsights>> | null = null;
       try {
         resolved = await resolveBlobForReportInsights({ clientCode: code, useSelectedClient: us });
+        setResolvedBlob(resolved);
       } catch {
         setSuggestionsError(
           'Could not resolve the report blob. Template suggestions need GET resolve-blob; the data sample may still load below.'
         );
-        setSuggestions(null);
+        setModelSuggestions(null);
       }
 
       const samplePromise = getReportBlobDataSample({ clientCode: code, maxRows: 100, useSelectedClient: us });
-      const toRun: Promise<unknown>[] = [samplePromise];
-      if (resolved) {
-        toRun.push(
-          suggestTransformationsFromBlob({
-            clientId: resolved.clientId,
-            path: resolved.blobPath,
-            useSelectedClient: us,
-          })
-        );
-      }
-      const results = await Promise.allSettled(toRun);
-      const sampleRes = results[0];
+      const sampleRes = await Promise.allSettled([samplePromise]).then((r) => r[0]);
       if (sampleRes.status === 'fulfilled') {
         setSample(sampleRes.value as BlobDataSample);
       } else {
         setSample(null);
         setSampleError(formatInsightsApiError(sampleRes.reason));
-      }
-      if (resolved && results.length > 1) {
-        const suggRes = results[1];
-        if (suggRes.status === 'fulfilled') {
-          setSuggestions(suggRes.value as InsightsWithTemplatesResponse);
-        } else {
-          setSuggestions(null);
-          setSuggestionsError(formatInsightsApiError(suggRes.status === 'rejected' ? suggRes.reason : null));
-        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load Insights.');
@@ -132,6 +117,28 @@ export function useSimpleInsights(
       setLoading(false);
     }
   }, [clientId, reportClientCode, explicitClientOnly, useSelectedClientForApis]);
+
+  const generateAiInsights = useCallback(async () => {
+    if (!resolvedBlob) {
+      setSuggestionsError('Blob resolution is missing; cannot generate AI insights yet.');
+      return;
+    }
+    setSuggesting(true);
+    setSuggestionsError(null);
+    try {
+      const res = await suggestModelsFromBlob({
+        clientId: resolvedBlob.clientId,
+        blobPath: resolvedBlob.blobPath,
+        useSelectedClient: useSelectedClientForApis,
+      });
+      setModelSuggestions(res);
+    } catch (e) {
+      setModelSuggestions(null);
+      setSuggestionsError(formatInsightsApiError(e));
+    } finally {
+      setSuggesting(false);
+    }
+  }, [resolvedBlob, useSelectedClientForApis]);
 
   useEffect(() => {
     void load();
@@ -144,8 +151,11 @@ export function useSimpleInsights(
     activeReport,
     sample,
     sampleError,
-    suggestions,
+    resolvedBlob,
+    modelSuggestions,
     suggestionsError,
+    suggesting,
+    generateAiInsights,
     refresh: load,
   };
 }

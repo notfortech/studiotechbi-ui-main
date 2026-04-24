@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import type { ModelingRelationship, ModelingStep, PreviewTable, Selection, StepStatus } from '../types';
+import type { ModelingRelationship, ModelingSchema, ModelingStep, PreviewTable, Selection, StepStatus } from '../types';
 
 function cloneRows(rows: Record<string, string>[]): Record<string, string>[] {
   return rows.map((r) => ({ ...r }));
@@ -93,9 +93,39 @@ const initialRelationships: ModelingRelationship[] = [
   },
 ];
 
+const initialSchema: ModelingSchema = {
+  tables: [
+    {
+      name: 'ORDER_LINES',
+      fields: [
+        'order_line_id',
+        'order_id',
+        'product_id',
+        'product_name',
+        'category',
+        'customer_id',
+        'customer_name',
+        'state',
+        'price',
+        'quantity',
+        'date',
+      ],
+    },
+    { name: 'DATE', fields: ['date'] },
+    { name: 'CUSTOMERS', fields: ['customer_id', 'name', 'state'] },
+    { name: 'PRODUCTS', fields: ['product_id', 'name', 'category'] },
+  ],
+  links: [
+    { fromTable: 'DATE', toTable: 'ORDER_LINES' },
+    { fromTable: 'CUSTOMERS', toTable: 'ORDER_LINES' },
+    { fromTable: 'PRODUCTS', toTable: 'ORDER_LINES' },
+  ],
+};
+
 export function useModelingStudio() {
   const [steps, setSteps] = useState<ModelingStep[]>(initialSteps);
   const [relationships, setRelationships] = useState<ModelingRelationship[]>(initialRelationships);
+  const [schema] = useState<ModelingSchema>(initialSchema);
   const [selection, setSelection] = useState<Selection>({ kind: 'step', id: initialSteps[0].id });
   const [previewBefore, setPreviewBefore] = useState<PreviewTable>(() => ({
     columns: [...initialSteps[0].previewBefore.columns],
@@ -207,6 +237,7 @@ export function useModelingStudio() {
   }, [persistToBackend]);
 
   return {
+    schema,
     steps,
     relationships,
     selection,
