@@ -1,3 +1,4 @@
+import { isAxiosError } from 'axios';
 import { API_BASE_URL } from '../../../core/constants';
 import { apiService } from '../../../services/api';
 import type { ApiResponse } from '../../../services/adminApiTypes';
@@ -338,21 +339,31 @@ export async function suggestTransformations(body: {
 
 /**
  * POST /api/insights-engine/transformations/suggest-from-blob
- * Use the same `clientId` (GUID) and `path` (blobPath) as returned from `resolveBlobForReportInsights`
- * so suggestions align with the GET `report-data-sample` data.
+ * Backend requires `BlobPath` (JSON: `blobPath`). `path` is also sent for compatibility.
  */
 export async function suggestTransformationsFromBlob(params: {
   clientId: string;
   dataConnectionId?: string;
   path?: string;
+  /** Match Reports when an accountant (or client in firm mode) is acting for a selected client. */
+  useSelectedClient?: boolean;
 }): Promise<InsightsWithTemplatesResponse> {
+  const body: Record<string, unknown> = {
+    clientId: params.clientId,
+  };
+  if (params.dataConnectionId) {
+    body.dataConnectionId = params.dataConnectionId;
+  }
+  if (params.path) {
+    body.blobPath = params.path;
+    body.path = params.path;
+  }
+  if (params.useSelectedClient) {
+    body.useSelectedClient = true;
+  }
   const raw = await apiService.post<ApiResponse<InsightsWithTemplatesResponse> | InsightsWithTemplatesResponse>(
     'insights-engine/transformations/suggest-from-blob',
-    {
-      clientId: params.clientId,
-      dataConnectionId: params.dataConnectionId,
-      path: params.path,
-    }
+    body
   );
   return parseInsightsWithTemplatesResponse(unwrapApiResponse(raw));
 }
@@ -367,23 +378,42 @@ function columnNameFromCell(c: unknown): string {
   return String(c);
 }
 
-/** Normalize GET response for report blob sample rows. */
+function digTablePayload(o: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!o) return null;
+  if (Array.isArray(o.rows)) return o;
+  const dataInner = asRecord(o.data);
+  if (dataInner && Array.isArray(dataInner.rows)) return dataInner;
+  const resInner = asRecord(o.result);
+  if (resInner && Array.isArray(resInner.rows)) return resInner;
+  const tbl = asRecord(o.table);
+  if (tbl && Array.isArray(tbl.rows)) return tbl;
+  return o;
+}
+
+/** Normalize GET response for report blob sample rows. Tolerates nested `data` / `result` / `table` and alternate row keys. */
 export function parseBlobDataSample(raw: unknown): BlobDataSample {
-  const u = unwrapApiResponse(raw as ApiResponse<unknown>);
-  const o = asRecord(u);
+  const u0 = unwrapApiResponse(raw as ApiResponse<unknown>);
+  const o0 = asRecord(u0);
+  const o = digTablePayload(o0) ?? o0;
   if (!o) {
     return { columns: [], rows: [], truncated: false, rowCount: 0 };
   }
-  const colsRaw = o.columns;
+  const colsRaw = o.columns ?? o.columnNames;
   let columns: string[] = [];
   if (Array.isArray(colsRaw)) {
     columns = colsRaw.map(columnNameFromCell);
   }
-  const rowsRaw = o.rows;
-  const allRows = Array.isArray(rowsRaw)
+  const rowsRaw = o.rows ?? o.items ?? o.records ?? o.values;
+  let allRows: Record<string, unknown>[] = Array.isArray(rowsRaw)
     ? (rowsRaw as unknown[]).filter((r): r is Record<string, unknown> => r !== null && typeof r === 'object')
     : [];
-  const rowCount = typeof o.rowCount === 'number' ? o.rowCount : allRows.length;
+  if (allRows.length === 0 && Array.isArray((o as { value?: unknown }).value)) {
+    const v = (o as { value: unknown[] }).value;
+    allRows = v
+      .filter((r): r is Record<string, unknown> => r !== null && typeof r === 'object')
+      .map((r) => r as Record<string, unknown>);
+  }
+  const rowCount = typeof o.rowCount === 'number' ? o.rowCount : typeof o.totalCount === 'number' ? o.totalCount : allRows.length;
   const truncated =
     o.truncated === true ||
     (typeof o.truncated === 'string' && o.truncated === 'true') ||
@@ -393,6 +423,58 @@ export function parseBlobDataSample(raw: unknown): BlobDataSample {
     columns = Object.keys(rows[0]);
   }
   return { columns, rows, truncated, rowCount };
+}
+
+function isApiEnvelopeFailure(raw: unknown): { failed: true; message: string } | { failed: false } {
+  const o = asRecord(raw);
+  if (!o) return { failed: false };
+  if (o.success === false) {
+    const errList = o.errors;
+    const fromErrors =
+      Array.isArray(errList) && typeof errList[0] === 'string' && errList[0] ? (errList[0] as string) : null;
+    const message =
+      fromErrors ||
+      (typeof o.message === 'string' && o.message) ||
+      (typeof o.error === 'string' && o.error) ||
+      'The server returned success: false for the sample request.';
+    return { failed: true, message };
+  }
+  return { failed: false };
+}
+
+/** For axios/HTTP and envelope failures; use in the hook when a sample call rejects. */
+export function formatInsightsApiError(e: unknown): string {
+  if (isAxiosError(e)) {
+    const st = e.response?.status;
+    const data = e.response?.data;
+    if (data && typeof data === 'object') {
+      const d = data as Record<string, unknown>;
+      const errList = d.errors;
+      const firstErr =
+        Array.isArray(errList) && typeof errList[0] === 'string' && errList[0] ? (errList[0] as string) : null;
+      const m =
+        firstErr ||
+        (typeof d.message === 'string' && d.message) ||
+        (typeof d.error === 'string' && d.error) ||
+        (typeof d.title === 'string' && d.title);
+      if (m) return m;
+    }
+    if (st === 405) {
+      return 'HTTP 405: method not allowed. This route may be implemented as POST with a JSON body, not GET (query-only).';
+    }
+    if (st === 404) {
+      return 'Sample API not found (404). Confirm /api/insights-engine/report-data-sample is deployed and the path matches.';
+    }
+    if (st === 401) {
+      return 'Unauthorized (401). Sign in again or check that this user can read report data for this client.';
+    }
+    if (st === 403) {
+      return 'Forbidden (403). This account may not read blob samples for this clientCode.';
+    }
+    return e.message || `Request failed${st ? ` (${st})` : ''}.`;
+  }
+  if (e instanceof Error) return e.message;
+  return 'Could not load the data sample.';
 }
 
 function parseResolvedBlobPayload(raw: unknown): InsightsResolvedBlob | null {
@@ -406,14 +488,20 @@ function parseResolvedBlobPayload(raw: unknown): InsightsResolvedBlob | null {
 }
 
 /**
- * GET /api/insights-engine/resolve-blob?clientCode=…
- * Resolves the blob used for the report sample and the client GUID to pass to `suggest-from-blob`.
- * (The sample GET does not return `blobPath`; this step is required until the sample DTO includes it.)
+ * POST /api/insights-engine/resolve-blob (JSON body).
+ * Do not call GET on this path — the server may only expose POST; a GET fallback can return 500 "method not supported".
  */
-export async function resolveBlobForReportInsights(params: { clientCode: string }): Promise<InsightsResolvedBlob> {
-  const q = new URLSearchParams({ clientCode: params.clientCode });
-  const raw = await apiService.get<ApiResponse<Record<string, unknown>> | Record<string, unknown>>(
-    `insights-engine/resolve-blob?${q.toString()}`
+export async function resolveBlobForReportInsights(params: {
+  clientCode: string;
+  useSelectedClient?: boolean;
+}): Promise<InsightsResolvedBlob> {
+  const body: Record<string, unknown> = { clientCode: params.clientCode };
+  if (params.useSelectedClient) {
+    body.useSelectedClient = true;
+  }
+  const raw = await apiService.post<ApiResponse<Record<string, unknown>> | Record<string, unknown>>(
+    'insights-engine/resolve-blob',
+    body
   );
   const parsed = parseResolvedBlobPayload(raw);
   if (!parsed) {
@@ -423,18 +511,30 @@ export async function resolveBlobForReportInsights(params: { clientCode: string 
 }
 
 /**
- * GET /api/insights-engine/report-data-sample?clientCode=&maxRows=100
- * Read-only sample from the active report dataset in blob. Unwrap `data` for `columns` / `rows` / `rowCount` / `truncated`.
+ * POST /api/insights-engine/report-data-sample (JSON: clientCode, maxRows, useSelectedClient?).
+ * Do not fall back to GET — GET on this path has produced 500 "Specified method is not supported" on some hosts.
  */
-export async function getReportBlobDataSample(params: { clientCode: string; maxRows?: number }): Promise<BlobDataSample> {
+export async function getReportBlobDataSample(params: {
+  clientCode: string;
+  maxRows?: number;
+  useSelectedClient?: boolean;
+}): Promise<BlobDataSample> {
   const max = Math.min(params.maxRows ?? BLOB_SAMPLE_MAX, BLOB_SAMPLE_MAX);
-  const q = new URLSearchParams({
+  const body: Record<string, unknown> = {
     clientCode: params.clientCode,
-    maxRows: String(max),
-  });
-  const raw = await apiService.get<ApiResponse<BlobDataSample> | BlobDataSample>(
-    `insights-engine/report-data-sample?${q.toString()}`
+    maxRows: max,
+  };
+  if (params.useSelectedClient) {
+    body.useSelectedClient = true;
+  }
+  const raw = await apiService.post<ApiResponse<BlobDataSample> | BlobDataSample>(
+    'insights-engine/report-data-sample',
+    body
   );
+  const env = isApiEnvelopeFailure(raw);
+  if (env.failed) {
+    throw new Error(env.message);
+  }
   return parseBlobDataSample(raw);
 }
 

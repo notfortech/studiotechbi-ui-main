@@ -5,6 +5,7 @@ import {
   type AvailableReportConfig,
 } from '../../../services/reportService';
 import {
+  formatInsightsApiError,
   getReportBlobDataSample,
   resolveBlobForReportInsights,
   suggestTransformationsFromBlob,
@@ -17,19 +18,34 @@ function isActiveReport(c: AvailableReportConfig | null | undefined): c is Avail
 }
 
 async function resolveReportConfig(
-  reportClientCode: string | undefined
+  reportClientCode: string | undefined,
+  explicitClientOnly: boolean,
+  useSelectedClient: boolean
 ): Promise<AvailableReportConfig | null> {
+  if (explicitClientOnly && !reportClientCode) {
+    return null;
+  }
   if (reportClientCode) {
-    const one = await getAvailableReportsConfigForClient(reportClientCode);
+    const one = await getAvailableReportsConfigForClient(reportClientCode, {
+      useSelectedClient: useSelectedClient || undefined,
+    });
     if (isActiveReport(one)) return one;
+  }
+  if (explicitClientOnly) {
+    return null;
   }
   const all = await getAvailableReportsConfig();
   return (all.find((c) => isActiveReport(c)) ?? all[0]) ?? null;
 }
 
+/**
+ * @param useSelectedClientForApis - When true, all insights-engine + report config calls add `useSelectedClient` (accountant or client in accounting-firm mode, with a selected client).
+ */
 export function useSimpleInsights(
   clientId: string | undefined,
-  reportClientCode: string | undefined
+  reportClientCode: string | undefined,
+  explicitClientOnly: boolean = false,
+  useSelectedClientForApis: boolean = false
 ) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,12 +63,20 @@ export function useSimpleInsights(
       setSuggestions(null);
       return;
     }
+    if (explicitClientOnly && !reportClientCode) {
+      setLoading(false);
+      setActiveReport(null);
+      setSample(null);
+      setSuggestions(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     setSampleError(null);
     setSuggestionsError(null);
+    const us = useSelectedClientForApis;
     try {
-      const config = await resolveReportConfig(reportClientCode);
+      const config = await resolveReportConfig(reportClientCode, explicitClientOnly, us);
       if (!isActiveReport(config)) {
         setActiveReport(null);
         setSample(null);
@@ -65,7 +89,7 @@ export function useSimpleInsights(
 
       let resolved: Awaited<ReturnType<typeof resolveBlobForReportInsights>> | null = null;
       try {
-        resolved = await resolveBlobForReportInsights({ clientCode: code });
+        resolved = await resolveBlobForReportInsights({ clientCode: code, useSelectedClient: us });
       } catch {
         setSuggestionsError(
           'Could not resolve the report blob. Template suggestions need GET resolve-blob; the data sample may still load below.'
@@ -73,13 +97,14 @@ export function useSimpleInsights(
         setSuggestions(null);
       }
 
-      const samplePromise = getReportBlobDataSample({ clientCode: code, maxRows: 100 });
+      const samplePromise = getReportBlobDataSample({ clientCode: code, maxRows: 100, useSelectedClient: us });
       const toRun: Promise<unknown>[] = [samplePromise];
       if (resolved) {
         toRun.push(
           suggestTransformationsFromBlob({
             clientId: resolved.clientId,
             path: resolved.blobPath,
+            useSelectedClient: us,
           })
         );
       }
@@ -89,7 +114,7 @@ export function useSimpleInsights(
         setSample(sampleRes.value as BlobDataSample);
       } else {
         setSample(null);
-        setSampleError('Could not load the data sample. The sample API may not be available yet.');
+        setSampleError(formatInsightsApiError(sampleRes.reason));
       }
       if (resolved && results.length > 1) {
         const suggRes = results[1];
@@ -97,7 +122,7 @@ export function useSimpleInsights(
           setSuggestions(suggRes.value as InsightsWithTemplatesResponse);
         } else {
           setSuggestions(null);
-          setSuggestionsError('Could not load template suggestions right now.');
+          setSuggestionsError(formatInsightsApiError(suggRes.status === 'rejected' ? suggRes.reason : null));
         }
       }
     } catch (e) {
@@ -106,7 +131,7 @@ export function useSimpleInsights(
     } finally {
       setLoading(false);
     }
-  }, [clientId, reportClientCode]);
+  }, [clientId, reportClientCode, explicitClientOnly, useSelectedClientForApis]);
 
   useEffect(() => {
     void load();
