@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useAuth } from '../../../auth/AuthContext';
 import { AiPanel } from '../components/AiPanel';
 import { DataPreview } from '../components/DataPreview';
+import { ModelDesigner } from '../components/ModelDesigner';
 import { ModelDiagram } from '../components/ModelDiagram';
 import { ModelSummaryCard } from '../components/ModelSummaryCard';
 import { StepsPane } from '../components/StepsPane';
@@ -158,7 +159,7 @@ export function ModelingStudioPage() {
           <div className="col-span-12 min-h-0 border-y border-slate-200 md:col-span-6 md:border-x md:border-y-0">
             <div className="flex h-full min-h-0 flex-col">
               <div className="min-h-0 flex-[3] border-b border-slate-200">
-                <ModelDiagram schema={studio.schema} />
+                <ModelDesigner schema={studio.schema} />
               </div>
               <div className="min-h-0 flex-[2]">
                 <DataPreview
