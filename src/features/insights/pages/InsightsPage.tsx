@@ -302,9 +302,7 @@ export function InsightsPage() {
                   Client: {flow.activeReport.clientCode}
                 </Typography>
               )}
-              <Box sx={{ maxHeight: 220, overflow: 'auto', mb: 1 }}>
-                <BlobSampleTable data={flow.sample} error={flow.sampleError} maxHeight={200} />
-              </Box>
+              <BlobSampleTable data={flow.sample} error={flow.sampleError} maxHeight={200} />
 
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 1 }}>
                 <Button
