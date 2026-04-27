@@ -283,6 +283,40 @@ export async function getAvailableReportsConfig(): Promise<AvailableReportConfig
 
 const NO_REPORT_MESSAGE = "No report configured for this client";
 
+const NO_PUBLISHED_TEMPLATE_REPORT =
+  "No published report for this template yet.";
+
+function isEmbedTokenResponse(data: unknown): data is EmbedTokenResponse {
+  return (
+    !!data &&
+    typeof data === "object" &&
+    "accessToken" in data &&
+    "embedUrl" in data &&
+    "reportId" in data &&
+    typeof (data as EmbedTokenResponse).accessToken === "string" &&
+    typeof (data as EmbedTokenResponse).embedUrl === "string" &&
+    typeof (data as EmbedTokenResponse).reportId === "string"
+  );
+}
+
+function bodySuggestsPowerBiNotConfigured(data: unknown): boolean {
+  if (!data || typeof data !== "object") return false;
+  const o = data as Record<string, unknown>;
+  const blob = [o.title, o.detail, o.message, o.type]
+    .filter((x): x is string => typeof x === "string")
+    .join(" ");
+  if (/PowerBiNotConfigured/i.test(blob)) return true;
+  const errs = o.errors;
+  if (Array.isArray(errs) && errs.some((e) => typeof e === "string" && /PowerBiNotConfigured/i.test(e))) {
+    return true;
+  }
+  try {
+    return JSON.stringify(data).includes("PowerBiNotConfigured");
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Extract a user-facing message from an embed-token API error (4xx/5xx or failure body).
  * Use in catch blocks when getEmbedToken fails.
@@ -290,12 +324,19 @@ const NO_REPORT_MESSAGE = "No report configured for this client";
 export function getEmbedTokenErrorMessage(error: unknown): string {
   if (error && typeof error === "object" && "response" in error) {
     const ax = error as { response?: { data?: unknown; status?: number } };
+    const status = ax.response?.status;
     const data = ax.response?.data;
+    if (status === 422 && bodySuggestsPowerBiNotConfigured(data)) {
+      return NO_PUBLISHED_TEMPLATE_REPORT;
+    }
     if (data && typeof data === "object" && "message" in data && typeof (data as { message: unknown }).message === "string") {
       return (data as { message: string }).message;
     }
   }
   if (error instanceof Error && error.message) {
+    if (/PowerBiNotConfigured/i.test(error.message)) {
+      return NO_PUBLISHED_TEMPLATE_REPORT;
+    }
     return error.message;
   }
   return NO_REPORT_MESSAGE;
@@ -323,23 +364,79 @@ export async function getEmbedToken(
   const data = await apiService.get<EmbedTokenResponse | { message?: string }>(
     `/powerbi/embed-token/${reportType}?${params.toString()}`
   );
-  if (
-    data &&
-    typeof data === "object" &&
-    "accessToken" in data &&
-    "embedUrl" in data &&
-    "reportId" in data &&
-    typeof (data as EmbedTokenResponse).accessToken === "string" &&
-    typeof (data as EmbedTokenResponse).embedUrl === "string" &&
-    typeof (data as EmbedTokenResponse).reportId === "string"
-  ) {
-    return data as EmbedTokenResponse;
+  if (isEmbedTokenResponse(data)) {
+    return data;
   }
   const message =
     data && typeof data === "object" && "message" in data && typeof (data as { message: unknown }).message === "string"
       ? (data as { message: string }).message
       : NO_REPORT_MESSAGE;
   throw new Error(message);
+}
+
+/**
+ * GET /api/powerbi/embed-token-by-template — resolves embed for a catalog template when the backend supports it.
+ * Query: templateId, reportType, period, clientCode?, useSelectedClient?
+ */
+export async function getEmbedTokenByTemplate(args: {
+  templateId: string;
+  reportType: string;
+  period: string;
+  clientCode?: string;
+  useSelectedClient?: boolean;
+}): Promise<EmbedTokenResponse> {
+  const params = new URLSearchParams({
+    templateId: args.templateId,
+    reportType: args.reportType,
+    period: args.period,
+  });
+  if (args.clientCode) {
+    params.set("clientCode", args.clientCode);
+  }
+  if (args.useSelectedClient) {
+    params.set("useSelectedClient", "true");
+  }
+  const data = await apiService.get<EmbedTokenResponse | { message?: string }>(
+    `/powerbi/embed-token-by-template?${params.toString()}`
+  );
+  if (isEmbedTokenResponse(data)) {
+    return data;
+  }
+  const message =
+    data && typeof data === "object" && "message" in data && typeof (data as { message: unknown }).message === "string"
+      ? (data as { message: string }).message
+      : NO_REPORT_MESSAGE;
+  throw new Error(message);
+}
+
+/** Default YYYY-MM for Insights embed when the report config has no periods list. */
+export function getDefaultEmbedPeriod(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Prefer template-scoped embed; fall back to the existing client active report embed when the by-template route is missing or fails.
+ */
+export async function getEmbedTokenForInsightsWithTemplateFallback(args: {
+  templateId: string;
+  period: string;
+  clientCode: string;
+  useSelectedClient?: boolean;
+}): Promise<EmbedTokenResponse> {
+  try {
+    return await getEmbedTokenByTemplate({
+      templateId: args.templateId,
+      reportType: "monthly",
+      period: args.period,
+      clientCode: args.clientCode,
+      useSelectedClient: args.useSelectedClient,
+    });
+  } catch {
+    return await getEmbedToken("monthly", args.period, args.clientCode, {
+      useSelectedClient: args.useSelectedClient,
+    });
+  }
 }
 
 /** Fetch available reporting periods for a client. Uses clientCode for multi-tenant. */
