@@ -2,11 +2,15 @@ import {
   Alert,
   Box,
   Button,
+  CircularProgress,
   FormControl,
   InputLabel,
   MenuItem,
   Paper,
   Select,
+  Tab,
+  Tabs,
+  TextField,
   type SelectChangeEvent,
   Stack,
   Typography,
@@ -15,13 +19,26 @@ import { useContext, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../auth/AuthContext';
 import { ClientViewContext } from '../../../layouts/client/ClientViewContext';
-import { ROUTES } from '../../../core/constants';
-import { getAccountantClients, type AccountantClient } from '../../../services/reportService';
+import {
+  getAccountantClients,
+  getDefaultEmbedPeriod,
+  getEmbedTokenForInsightsWithTemplateFallback,
+  getEmbedTokenErrorMessage,
+  type AccountantClient,
+  type EmbedTokenResponse,
+} from '../../../services/reportService';
+import { PowerBIEmbed } from '../../../portals/client/PowerBIEmbed';
 import { BlobSampleTable } from '../components/BlobSampleTable';
 import { CopilotPanel } from '../components/CopilotPanel';
 import { Loader } from '../components/Loader';
 import { useSimpleInsights } from '../hooks/useSimpleInsights';
 import { ProposedModelCard } from '../components/ProposedModelCard';
+import { generateCanonicalPlansFromBlob, formatInsightsApiError } from '../services/insightService';
+import type { CanonicalPlansResponse } from '../types';
+import { PlanCard } from '../components/canonical/PlanCard';
+import { SemanticModelPreview } from '../components/canonical/SemanticModelPreview';
+import { DashboardPreview } from '../components/canonical/DashboardPreview';
+import { ValidationPanel } from '../components/canonical/ValidationPanel';
 
 /**
  * Client code to resolve report + blob (`GET /reports/available/{clientCode}` and insights-engine).
@@ -106,10 +123,78 @@ export function InsightsPage() {
 
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const generationCost = 1_000;
+  const [tab, setTab] = useState<'models' | 'canonical'>('models');
+
+  const [prompt, setPrompt] = useState('');
+  const [mode, setMode] = useState<'PredictScenarios' | 'ScenarioFocused'>('PredictScenarios');
+  const [canonicalLoading, setCanonicalLoading] = useState(false);
+  const [canonicalError, setCanonicalError] = useState<string | null>(null);
+  const [canonical, setCanonical] = useState<CanonicalPlansResponse | null>(null);
+
+  const [embedToken, setEmbedToken] = useState<EmbedTokenResponse | null>(null);
+  const [embedLoading, setEmbedLoading] = useState(false);
+  const [embedError, setEmbedError] = useState<string | null>(null);
+
+  const embedPeriod = useMemo(() => {
+    const p = flow.activeReport?.periods;
+    if (p && p.length > 0) return p[0];
+    return getDefaultEmbedPeriod();
+  }, [flow.activeReport?.periods]);
+
+  const selectedTemplateLabel = useMemo(() => {
+    const list = flow.modelSuggestions?.verifiedTemplates ?? [];
+    const m = list.find((x) => x.template.templateId === selectedTemplateId);
+    if (m?.template.templateName) return m.template.templateName;
+    if (m?.template.industry) return `${selectedTemplateId} (${m.template.industry})`;
+    return selectedTemplateId || '';
+  }, [flow.modelSuggestions?.verifiedTemplates, selectedTemplateId]);
 
   useEffect(() => {
     setSelectedTemplateId('');
   }, [reportClientCode, flow.modelSuggestions?.verifiedTemplates?.length]);
+
+  useEffect(() => {
+    if (!selectedTemplateId || !reportClientCode || !flow.hasActiveReport) {
+      setEmbedToken(null);
+      setEmbedError(null);
+      setEmbedLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setEmbedLoading(true);
+    setEmbedError(null);
+    setEmbedToken(null);
+    void (async () => {
+      try {
+        const token = await getEmbedTokenForInsightsWithTemplateFallback({
+          templateId: selectedTemplateId,
+          period: embedPeriod,
+          clientCode: reportClientCode,
+          useSelectedClient: useSelectedClientForApis || undefined,
+        });
+        if (!cancelled) {
+          setEmbedToken(token);
+          setEmbedError(null);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setEmbedToken(null);
+          setEmbedError(getEmbedTokenErrorMessage(e));
+        }
+      } finally {
+        if (!cancelled) setEmbedLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedTemplateId,
+    reportClientCode,
+    flow.hasActiveReport,
+    embedPeriod,
+    useSelectedClientForApis,
+  ]);
 
   const handleAccountantClientChange = (e: SelectChangeEvent<string>) => {
     setAccountantClientCode(e.target.value);
@@ -161,6 +246,15 @@ export function InsightsPage() {
         </FormControl>
       )}
 
+      <Tabs
+        value={tab}
+        onChange={(_, v) => setTab(v)}
+        sx={{ mb: 2 }}
+      >
+        <Tab value="models" label="Template suggestions" />
+        <Tab value="canonical" label="Canonical Plans (Beta)" />
+      </Tabs>
+
       {flow.error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {flow.error}
@@ -196,21 +290,23 @@ export function InsightsPage() {
         </Alert>
       )}
 
-      {!flow.loading && flow.hasActiveReport && (
-        <Stack direction={{ xs: 'column', md: 'row' }} alignItems="flex-start" spacing={0}>
-          <Box sx={{ flex: 1, minWidth: 0, pr: { md: 0 } }}>
-            <Paper variant="outlined" sx={{ p: 2 }}>
-              <Typography variant="subtitle2" gutterBottom>
+      {!flow.loading && flow.hasActiveReport && tab === 'models' && (
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="stretch">
+          <Box sx={{ width: { md: 300 }, flexShrink: 0, minWidth: 0 }}>
+            <Paper variant="outlined" sx={{ p: 1.5, height: '100%' }}>
+              <Typography variant="subtitle2" fontWeight={700} gutterBottom>
                 Data sample (read-only)
               </Typography>
               {flow.activeReport && (
-                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
                   Client: {flow.activeReport.clientCode}
                 </Typography>
               )}
-              <BlobSampleTable data={flow.sample} error={flow.sampleError} />
+              <Box sx={{ maxHeight: 220, overflow: 'auto', mb: 1 }}>
+                <BlobSampleTable data={flow.sample} error={flow.sampleError} maxHeight={200} />
+              </Box>
 
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 2 }}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 1 }}>
                 <Button
                   variant="contained"
                   disabled={!canGenerate}
@@ -228,11 +324,11 @@ export function InsightsPage() {
               </Stack>
 
               {flow.modelSuggestions?.proposedModels?.length ? (
-                <Box sx={{ mt: 2 }}>
+                <Box sx={{ mt: 1.5 }}>
                   <Typography variant="subtitle2" gutterBottom>
                     Dashboards possible
                   </Typography>
-                  <Stack spacing={1.5}>
+                  <Stack spacing={1}>
                     {flow.modelSuggestions.proposedModels.map((m, idx) => (
                       <ProposedModelCard key={m.id ?? `${m.templateId ?? 'm'}-${idx}`} model={m} />
                     ))}
@@ -242,14 +338,166 @@ export function InsightsPage() {
             </Paper>
           </Box>
 
-          <CopilotPanel
-            verifiedTemplates={flow.modelSuggestions?.verifiedTemplates ?? []}
-            provisionedModels={[]}
-            busy={flow.suggesting}
-            selectable
-            selectedTemplateId={selectedTemplateId}
-            onSelectTemplate={(m) => setSelectedTemplateId(m.template.templateId)}
-          />
+          <Box
+            sx={{
+              width: { xs: '100%', md: 300 },
+              flexShrink: 0,
+              borderLeft: { md: 1 },
+              borderColor: 'divider',
+              pl: { md: 2 },
+            }}
+          >
+            <CopilotPanel
+              verifiedTemplates={flow.modelSuggestions?.verifiedTemplates ?? []}
+              provisionedModels={[]}
+              busy={flow.suggesting}
+              selectable
+              compact
+              insightsProvider={flow.modelSuggestions?.insights?.provider}
+              selectedTemplateId={selectedTemplateId}
+              onSelectTemplate={(m) => setSelectedTemplateId(m.template.templateId)}
+            />
+          </Box>
+
+          <Box sx={{ flex: 1, minWidth: 0, minHeight: 420, display: 'flex', flexDirection: 'column' }}>
+            <Paper variant="outlined" sx={{ p: 1.5, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 400 }}>
+              <Typography variant="subtitle2" fontWeight={700} gutterBottom>
+                Live report
+              </Typography>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                {selectedTemplateId
+                  ? selectedTemplateLabel || selectedTemplateId
+                  : 'Select a Copilot template to load the embedded Power BI report.'}
+              </Typography>
+              {embedLoading && (
+                <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
+                  <CircularProgress size={32} />
+                </Box>
+              )}
+              {embedError && !embedLoading && (
+                <Alert severity="info" sx={{ mb: 1 }}>
+                  {embedError}
+                </Alert>
+              )}
+              {!embedLoading && !embedError && embedToken && (
+                <Box sx={{ flex: 1, minHeight: 400, width: '100%' }}>
+                  <PowerBIEmbed
+                    accessToken={embedToken.accessToken}
+                    embedUrl={embedToken.embedUrl}
+                    reportId={embedToken.reportId}
+                    periodValues={[embedPeriod]}
+                  />
+                </Box>
+              )}
+            </Paper>
+          </Box>
+        </Stack>
+      )}
+
+      {!flow.loading && flow.hasActiveReport && tab === 'canonical' && (
+        <Stack spacing={2}>
+          <Paper variant="outlined" sx={{ p: 2 }}>
+            <Typography variant="subtitle2" fontWeight={800} gutterBottom>
+              Canonical Plans (Beta)
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Generates validated dashboard plans from the report blob.
+            </Typography>
+
+            <Stack spacing={1.5}>
+              <TextField
+                label="Ask Copilot (optional)"
+                placeholder="e.g. Predict scenarios for next month based on sales trends"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                fullWidth
+                multiline
+                minRows={2}
+              />
+
+              <FormControl size="small" sx={{ maxWidth: 320 }}>
+                <InputLabel id="plans-mode">Mode</InputLabel>
+                <Select
+                  labelId="plans-mode"
+                  label="Mode"
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value as typeof mode)}
+                >
+                  <MenuItem value="PredictScenarios">PredictScenarios</MenuItem>
+                  <MenuItem value="ScenarioFocused">ScenarioFocused</MenuItem>
+                </Select>
+              </FormControl>
+
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="center">
+                <Button
+                  variant="contained"
+                  disabled={!reportClientCode || canonicalLoading}
+                  onClick={async () => {
+                    if (!reportClientCode) return;
+                    setCanonicalLoading(true);
+                    setCanonicalError(null);
+                    setCanonical(null);
+                    try {
+                      const res = await generateCanonicalPlansFromBlob({
+                        clientCode: reportClientCode,
+                        blobPath: '',
+                        maxRows: 100,
+                        userPrompt: prompt,
+                        useSelectedClient: true,
+                        mode: prompt.trim() ? 'ScenarioFocused' : mode,
+                      });
+                      setCanonical(res);
+                    } catch (e) {
+                      setCanonicalError(formatInsightsApiError(e));
+                    } finally {
+                      setCanonicalLoading(false);
+                    }
+                  }}
+                >
+                  {canonicalLoading ? 'Generating…' : 'Generate AI Insights'}
+                </Button>
+                <Typography variant="caption" color="text.secondary">
+                  One POST to <code>/api/insights-engine/plans/generate-from-blob</code>
+                </Typography>
+              </Stack>
+            </Stack>
+          </Paper>
+
+          {canonicalError && (
+            <Alert severity="error">{canonicalError}</Alert>
+          )}
+
+          {canonical && (
+            <>
+              <ValidationPanel validation={canonical.validation} />
+
+              <Paper variant="outlined" sx={{ p: 2 }}>
+                <Typography variant="subtitle2" fontWeight={800} gutterBottom>
+                  Summary
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  Provider: {canonical.provider || '—'}
+                </Typography>
+                <Typography variant="body1">{canonical.summary}</Typography>
+              </Paper>
+
+              <Stack spacing={2}>
+                {canonical.plans.map((p) => (
+                  <Stack key={p.templateId} spacing={1.5}>
+                    <PlanCard plan={p} />
+                    <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="flex-start">
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <SemanticModelPreview model={p.semanticModel} />
+                      </Box>
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <DashboardPreview dashboard={p.dashboard} />
+                      </Box>
+                    </Stack>
+                  </Stack>
+                ))}
+              </Stack>
+            </>
+          )}
         </Stack>
       )}
     </Box>

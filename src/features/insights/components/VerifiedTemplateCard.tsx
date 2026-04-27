@@ -15,6 +15,8 @@ interface VerifiedTemplateCardProps {
   selectable?: boolean;
   selected?: boolean;
   onSelect?: (match: VerifiedTemplateMatch) => void;
+  /** Dense layout for narrow Copilot rails. */
+  compact?: boolean;
 }
 
 export function VerifiedTemplateCard({
@@ -26,10 +28,13 @@ export function VerifiedTemplateCard({
   selectable,
   selected,
   onSelect,
+  compact,
 }: VerifiedTemplateCardProps) {
   const { template, matchScore, matchReasons } = match;
   const isCatalogOnly =
     matchScore === 0 && matchReasons.some((r) => r === CATALOG_SUBSET);
+
+  const reasonChips = matchReasons.filter((r) => r !== CATALOG_SUBSET).slice(0, compact ? 2 : undefined);
 
   return (
     <Box
@@ -53,7 +58,7 @@ export function VerifiedTemplateCard({
           : undefined
       }
       sx={{
-        p: 2,
+        p: compact ? 1 : 2,
         borderRadius: 1,
         border: 1,
         borderColor: selected ? 'primary.main' : 'divider',
@@ -67,20 +72,32 @@ export function VerifiedTemplateCard({
           : undefined,
       }}
     >
-      {isCatalogOnly && (
-        <Alert severity="info" sx={{ mb: 1.5 }} variant="outlined">
-          No close semantic match—showing a sample of templates from the catalog. Scores are zero until you pick
-          a better fit.
-        </Alert>
-      )}
-      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} mb={1}>
+      {isCatalogOnly &&
+        (compact ? (
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
+            Catalog subset — pick the closest fit.
+          </Typography>
+        ) : (
+          <Alert severity="info" sx={{ mb: 1.5 }} variant="outlined">
+            No close semantic match—showing a sample of templates from the catalog. Scores are zero until you pick
+            a better fit.
+          </Alert>
+        ))}
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} mb={compact ? 0.5 : 1}>
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="subtitle2" noWrap title={template.templateName ?? template.templateId}>
+          <Typography
+            variant={compact ? 'body2' : 'subtitle2'}
+            fontWeight={compact ? 600 : undefined}
+            noWrap
+            title={template.templateName ?? template.templateId}
+          >
             {template.templateName ?? template.templateId}
           </Typography>
-          <Typography variant="caption" color="text.secondary" display="block" noWrap title={template.templateId}>
-            ID: {template.templateId}
-          </Typography>
+          {!compact && (
+            <Typography variant="caption" color="text.secondary" display="block" noWrap title={template.templateId}>
+              ID: {template.templateId}
+            </Typography>
+          )}
         </Box>
         <Stack direction="row" spacing={0.5} flexShrink={0} alignItems="center">
           <Chip
@@ -92,26 +109,27 @@ export function VerifiedTemplateCard({
         </Stack>
       </Stack>
       {(template.industry || template.version) && (
-        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: compact ? 0.5 : 1 }} noWrap>
           {[template.industry, template.version].filter(Boolean).join(' · ')}
         </Typography>
       )}
-      {matchReasons.length > 0 && (
-        <Stack direction="row" flexWrap="wrap" gap={0.5} sx={{ mb: 1.5 }}>
-          {matchReasons
-            .filter((r) => r !== CATALOG_SUBSET)
-            .map((r) => (
-              <Chip key={r} size="small" label={r} variant="outlined" />
-            ))}
+      {reasonChips.length > 0 && (
+        <Stack direction="row" flexWrap="wrap" gap={0.5} sx={{ mb: compact ? 0.75 : 1.5 }}>
+          {reasonChips.map((r, ri) => (
+            <Chip key={`${ri}-${r.slice(0, 24)}`} size="small" label={r.length > 40 ? `${r.slice(0, 37)}…` : r} variant="outlined" />
+          ))}
         </Stack>
       )}
-      {!readOnly && (
+      {!readOnly && !(compact && selectable) && (
         <>
           <Button
             variant="contained"
             size="small"
             disabled={disabled || modelMissing}
-            onClick={() => onUse?.(match)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onUse?.(match);
+            }}
             title={modelMissing ? 'Provision the model for this template on the server, then try again.' : undefined}
           >
             Use this dashboard

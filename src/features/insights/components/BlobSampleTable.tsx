@@ -14,11 +14,13 @@ function cellStr(v: unknown): string {
 interface BlobSampleTableProps {
   data: BlobDataSample | null;
   error: string | null;
+  /** Max height of the scrollable table area (default 480). */
+  maxHeight?: number;
 }
 
 const MAX = 100;
 
-export function BlobSampleTable({ data, error }: BlobSampleTableProps) {
+export function BlobSampleTable({ data, error, maxHeight = 480 }: BlobSampleTableProps) {
   if (error) {
     return (
       <Typography variant="body2" color="text.secondary">
@@ -40,7 +42,7 @@ export function BlobSampleTable({ data, error }: BlobSampleTableProps) {
       <TableContainer
         component={Paper}
         variant="outlined"
-        sx={{ maxHeight: 480, maxWidth: '100%' }}
+        sx={{ maxHeight, maxWidth: '100%' }}
         tabIndex={0}
         role="region"
         aria-label="Read-only data sample, at most 100 rows"

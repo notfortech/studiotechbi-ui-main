@@ -1,6 +1,12 @@
-import { Box, Stack, Typography } from '@mui/material';
+import { Alert, Box, Stack, Typography } from '@mui/material';
 import type { InsightModel, VerifiedTemplateMatch } from '../types';
 import { VerifiedTemplateCard } from './VerifiedTemplateCard';
+
+function isCatalogOnlyProvider(provider: string | undefined): boolean {
+  if (!provider) return false;
+  if (provider === 'StudioTechBI.Catalog') return true;
+  return provider.toLowerCase().includes('catalog');
+}
 
 interface CopilotPanelProps {
   /** Template-verified dashboard options (only from the insights API). */
@@ -15,6 +21,10 @@ interface CopilotPanelProps {
   selectable?: boolean;
   selectedTemplateId?: string;
   onSelectTemplate?: (match: VerifiedTemplateMatch) => void;
+  /** Insights engine `data.insights.provider` when present (e.g. catalog-only). */
+  insightsProvider?: string;
+  /** Narrow rail with smaller cards (Insights page). */
+  compact?: boolean;
 }
 
 function hasProvisionedModel(models: InsightModel[], templateId: string): boolean {
@@ -30,27 +40,36 @@ export function CopilotPanel({
   selectable,
   selectedTemplateId,
   onSelectTemplate,
+  insightsProvider,
+  compact,
 }: CopilotPanelProps) {
+  const catalogHint = isCatalogOnlyProvider(insightsProvider);
+
   return (
     <Box
       sx={{
-        width: { xs: '100%', md: 360 },
+        width: { xs: '100%', md: compact ? 280 : 360 },
         flexShrink: 0,
-        borderLeft: { md: 1 },
+        borderLeft: compact ? 0 : { md: 1 },
         borderColor: 'divider',
-        pl: { md: 2 },
-        ml: { md: 2 },
-        pt: { xs: 2, md: 0 },
+        pl: compact ? 0 : { md: 2 },
+        ml: compact ? 0 : { md: 2 },
+        pt: { xs: compact ? 1 : 2, md: 0 },
       }}
     >
-      <Typography variant="h6" gutterBottom>
+      <Typography variant={compact ? 'subtitle1' : 'h6'} fontWeight={700} gutterBottom>
         Copilot
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+      <Typography variant="caption" color="text.secondary" sx={{ mb: catalogHint ? 1 : 2, display: 'block' }}>
         {readOnly
           ? 'Possible dashboard templates for your data (preview only). Suggestions are AI-assisted and verified on the server.'
           : 'Dashboard templates you can use—each option uses a real template ID from your catalog. Suggestions are AI-assisted, then matched and verified on the server before they appear here.'}
       </Typography>
+      {catalogHint && (
+        <Alert severity="info" variant="outlined" sx={{ mb: 1.5, py: 0.25 }}>
+          Template matching used the catalog only; external AI was skipped.
+        </Alert>
+      )}
       {verifiedTemplates.length === 0 && (
         <Typography variant="body2" color="text.secondary">
           {readOnly
@@ -58,7 +77,7 @@ export function CopilotPanel({
             : 'No suggestions yet. Load the sample, then run generate suggestions to see verified template options.'}
         </Typography>
       )}
-      <Stack spacing={2}>
+      <Stack spacing={compact ? 1 : 2}>
         {verifiedTemplates.map((m, i) => (
           <VerifiedTemplateCard
             key={`${m.template.templateId}-${i}`}
@@ -69,6 +88,7 @@ export function CopilotPanel({
             selected={selectedTemplateId === m.template.templateId}
             onSelect={onSelectTemplate}
             disabled={busy}
+            compact={compact}
             modelMissing={readOnly ? false : !hasProvisionedModel(provisionedModels, m.template.templateId)}
           />
         ))}
