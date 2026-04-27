@@ -6,6 +6,8 @@ import { unwrapApiResponse } from '../../../services/adminApiTypes';
 import type {
   BlobDataSample,
   InsightsResolvedBlob,
+  CanonicalPlansResponse,
+  DashboardTemplatePlan,
   ModelsSuggestFromBlobResponse,
   ProposedModel,
   DataConnection,
@@ -304,6 +306,39 @@ function normalizeVerifiedTemplateMatch(raw: unknown): VerifiedTemplateMatch | n
   return { template, matchScore, matchReasons };
 }
 
+/** Template rows from match-only endpoints: `{ templateId, name, confidence, mappingPreview }`. */
+function normalizeFlatTemplateMatch(raw: unknown): VerifiedTemplateMatch | null {
+  const o = asRecord(raw);
+  if (!o) return null;
+  if (o.template && typeof o.template === 'object') return null;
+  const templateId = str(o, 'templateId', 'template_id', 'id');
+  if (!templateId) return null;
+  const name = str(o, 'name', 'templateName', 'title');
+  let matchScore = typeof o.matchScore === 'number' ? o.matchScore : Number(o.matchScore);
+  if (Number.isNaN(matchScore)) {
+    const conf = num(o, 'confidence', 'score');
+    if (conf == null) matchScore = 0;
+    else matchScore = conf > 1 ? Math.min(1, conf / 100) : conf;
+  } else if (matchScore > 1) {
+    matchScore = Math.min(1, matchScore / 100);
+  }
+  const matchReasons: string[] = [];
+  const mp = o.mappingPreview;
+  if (typeof mp === 'string' && mp.trim()) matchReasons.push(mp.trim());
+  else if (Array.isArray(mp)) {
+    for (const x of mp) {
+      if (typeof x === 'string' && x.trim()) matchReasons.push(x.trim());
+    }
+  }
+  const template: InsightTemplateInfo = {
+    templateId,
+    templateName: name,
+    industry: str(o, 'industry'),
+    version: str(o, 'version'),
+  };
+  return { template, matchScore, matchReasons };
+}
+
 /**
  * Parse insights-engine `data` payload. Tolerates missing arrays.
  * Engine payload is under `data` (use unwrapApiResponse on the HTTP body first when wrapped in ApiResponse).
@@ -350,13 +385,21 @@ export function parseModelsSuggestFromBlobResponse(raw: unknown): ModelsSuggestF
   const u = unwrapApiResponse(raw as ApiResponse<unknown>);
   const o = asRecord(u);
   if (!o) return { proposedModels: [], verifiedTemplates: [] };
+  const ins = asRecord(o.insights) ?? asRecord(o.insight);
+  const insights = ins
+    ? ({
+        ...ins,
+        provider: str(ins, 'provider'),
+        summary: str(ins, 'summary'),
+      } as ModelsSuggestFromBlobResponse['insights'])
+    : undefined;
   const pmRaw = unwrapList<unknown>(u, ['proposedModels', 'models', 'items', 'options']);
   const proposedModels = pmRaw.map(normalizeProposedModel).filter((m): m is ProposedModel => m !== null);
   const vtRaw = unwrapList<unknown>(u, ['verifiedTemplates', 'templates']);
   const verifiedTemplates = vtRaw
-    .map(normalizeVerifiedTemplateMatch)
+    .map((item) => normalizeVerifiedTemplateMatch(item) ?? normalizeFlatTemplateMatch(item))
     .filter((m): m is VerifiedTemplateMatch => m !== null);
-  return { proposedModels, verifiedTemplates };
+  return { proposedModels, verifiedTemplates, insights };
 }
 
 /**
@@ -530,10 +573,47 @@ export function formatInsightsApiError(e: unknown): string {
     if (st === 403) {
       return 'Forbidden (403). This account may not read blob samples for this clientCode.';
     }
+    if (st === 404) {
+      return 'No blob found under accounting/created (404).';
+    }
+    if (st === 502 || st === 503) {
+      return 'AI service unavailable. Please try again later.';
+    }
     return e.message || `Request failed${st ? ` (${st})` : ''}.`;
   }
   if (e instanceof Error) return e.message;
   return 'Could not load the data sample.';
+}
+
+/**
+ * Canonical plans (single POST only).
+ * POST /api/insights-engine/plans/generate-from-blob
+ */
+export async function generateCanonicalPlansFromBlob(args: {
+  clientCode: string;
+  blobPath?: string;
+  maxRows?: number;
+  userPrompt: string;
+  useSelectedClient?: boolean;
+  mode?: 'PredictScenarios' | 'ScenarioFocused';
+}): Promise<CanonicalPlansResponse> {
+  const body: Record<string, unknown> = {
+    clientCode: args.clientCode,
+    blobPath: args.blobPath ?? '',
+    maxRows: typeof args.maxRows === 'number' ? args.maxRows : 100,
+    userPrompt: args.userPrompt,
+    mode: args.mode ?? 'PredictScenarios',
+    useSelectedClient: args.useSelectedClient === true,
+  };
+  const raw = await apiService.post<ApiResponse<CanonicalPlansResponse> | CanonicalPlansResponse>(
+    'insights-engine/plans/generate-from-blob',
+    body
+  );
+  const env = isApiEnvelopeFailure(raw);
+  if (env.failed) throw new Error(env.message);
+  const data = unwrapApiResponse(raw) as CanonicalPlansResponse;
+  const plans = Array.isArray((data as { plans?: unknown }).plans) ? ((data as { plans: DashboardTemplatePlan[] }).plans) : [];
+  return { ...data, plans };
 }
 
 function parseResolvedBlobPayload(raw: unknown): InsightsResolvedBlob | null {

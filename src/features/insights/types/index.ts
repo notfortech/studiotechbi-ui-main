@@ -105,4 +105,82 @@ export interface ProposedModel {
 export interface ModelsSuggestFromBlobResponse {
   proposedModels: ProposedModel[];
   verifiedTemplates: VerifiedTemplateMatch[];
+  /** Present when backend echoes engine metadata (e.g. catalog-only mode). */
+  insights?: TransformSuggestInsights;
+}
+
+// -------------------------
+// Canonical plans DTOs
+// -------------------------
+
+export interface CanonicalValidationResult {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface SemanticColumn {
+  name: string;
+  dataType?: string;
+  role?: string;
+  description?: string;
+}
+
+export interface SemanticMeasure {
+  name: string;
+  expression?: string;
+  description?: string;
+}
+
+export interface SemanticTable {
+  name: string;
+  columns: SemanticColumn[];
+  measures?: SemanticMeasure[];
+  description?: string;
+}
+
+export interface SemanticRelationship {
+  fromTable: string;
+  fromColumn: string;
+  toTable: string;
+  toColumn: string;
+  cardinality?: string;
+}
+
+export interface SemanticModel {
+  tables: SemanticTable[];
+  relationships: SemanticRelationship[];
+  measures?: SemanticMeasure[];
+}
+
+export interface DashboardVisual {
+  type: string;
+  title?: string;
+  description?: string;
+  fields?: string[];
+}
+
+export interface DashboardPage {
+  title: string;
+  visuals: DashboardVisual[];
+}
+
+export interface DashboardDefinition {
+  title: string;
+  pages: DashboardPage[];
+}
+
+export interface DashboardTemplatePlan {
+  templateId: string;
+  confidence: number;
+  rationale: string;
+  semanticModel: SemanticModel;
+  dashboard: DashboardDefinition;
+}
+
+export interface CanonicalPlansResponse {
+  provider: string;
+  summary: string;
+  plans: DashboardTemplatePlan[];
+  validation?: CanonicalValidationResult;
 }
