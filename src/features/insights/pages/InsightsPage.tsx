@@ -33,7 +33,12 @@ import { CopilotPanel } from '../components/CopilotPanel';
 import { Loader } from '../components/Loader';
 import { useSimpleInsights } from '../hooks/useSimpleInsights';
 import { ProposedModelCard } from '../components/ProposedModelCard';
-import { generateCanonicalPlansFromBlob, formatInsightsApiError } from '../services/insightService';
+import {
+  generateCanonicalPlansFromBlob,
+  formatInsightsApiError,
+  matchTemplatesFromBlob,
+  uploadAccountingCreatedFile,
+} from '../services/insightService';
 import type { CanonicalPlansResponse } from '../types';
 import { PlanCard } from '../components/canonical/PlanCard';
 import { SemanticModelPreview } from '../components/canonical/SemanticModelPreview';
@@ -135,6 +140,13 @@ export function InsightsPage() {
   const [embedLoading, setEmbedLoading] = useState(false);
   const [embedError, setEmbedError] = useState<string | null>(null);
 
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadOk, setUploadOk] = useState<string | null>(null);
+  const [quickTemplateMatches, setQuickTemplateMatches] = useState<
+    { template: { templateId: string; templateName?: string; industry?: string; version?: string }; matchScore: number; matchReasons: string[] }[]
+  >([]);
+
   const embedPeriod = useMemo(() => {
     const p = flow.activeReport?.periods;
     if (p && p.length > 0) return p[0];
@@ -142,15 +154,16 @@ export function InsightsPage() {
   }, [flow.activeReport?.periods]);
 
   const selectedTemplateLabel = useMemo(() => {
-    const list = flow.modelSuggestions?.verifiedTemplates ?? [];
+    const list = quickTemplateMatches.length > 0 ? quickTemplateMatches : flow.modelSuggestions?.verifiedTemplates ?? [];
     const m = list.find((x) => x.template.templateId === selectedTemplateId);
     if (m?.template.templateName) return m.template.templateName;
     if (m?.template.industry) return `${selectedTemplateId} (${m.template.industry})`;
     return selectedTemplateId || '';
-  }, [flow.modelSuggestions?.verifiedTemplates, selectedTemplateId]);
+  }, [flow.modelSuggestions?.verifiedTemplates, quickTemplateMatches, selectedTemplateId]);
 
   useEffect(() => {
     setSelectedTemplateId('');
+    setQuickTemplateMatches([]);
   }, [reportClientCode, flow.modelSuggestions?.verifiedTemplates?.length]);
 
   useEffect(() => {
@@ -213,6 +226,13 @@ export function InsightsPage() {
     !!flow.resolvedBlob?.clientId &&
     !!flow.resolvedBlob?.blobPath &&
     !flow.suggesting;
+
+  const canUpload =
+    !!reportClientCode &&
+    !needsClientPick &&
+    !flow.loading &&
+    flow.hasActiveReport &&
+    !uploading;
 
   return (
     <Box>
@@ -304,7 +324,64 @@ export function InsightsPage() {
               )}
               <BlobSampleTable data={flow.sample} error={flow.sampleError} maxHeight={200} />
 
+              {uploadError && (
+                <Alert severity="warning" sx={{ mt: 1 }}>
+                  {uploadError}
+                </Alert>
+              )}
+              {uploadOk && (
+                <Alert severity="success" sx={{ mt: 1 }}>
+                  {uploadOk}
+                </Alert>
+              )}
+
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 1 }}>
+                <Button
+                  variant="outlined"
+                  disabled={!canUpload}
+                  component="label"
+                >
+                  {uploading ? 'Uploading…' : 'Upload Excel/CSV'}
+                  <input
+                    hidden
+                    type="file"
+                    accept=".xlsx,.csv"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      // allow uploading the same file again
+                      e.currentTarget.value = '';
+                      if (!f || !reportClientCode) return;
+                      setUploading(true);
+                      setUploadError(null);
+                      setUploadOk(null);
+                      try {
+                        const res = await uploadAccountingCreatedFile({
+                          file: f,
+                          clientCode: reportClientCode,
+                          useSelectedClient: useSelectedClientForApis || undefined,
+                        });
+                        setUploadOk(`Uploaded to report storage: ${res.blobPath}`);
+                        try {
+                          const matches = await matchTemplatesFromBlob({
+                            clientCode: reportClientCode,
+                            blobPath: res.blobPath,
+                            maxRows: 100,
+                            useSelectedClient: useSelectedClientForApis || undefined,
+                          });
+                          setQuickTemplateMatches(matches);
+                        } catch {
+                          // Non-fatal: user can still click Generate AI Insights to populate Copilot.
+                          setQuickTemplateMatches([]);
+                        }
+                        await flow.refresh();
+                      } catch (err) {
+                        setUploadError(formatInsightsApiError(err));
+                      } finally {
+                        setUploading(false);
+                      }
+                    }}
+                  />
+                </Button>
                 <Button
                   variant="contained"
                   disabled={!canGenerate}
@@ -346,7 +423,7 @@ export function InsightsPage() {
             }}
           >
             <CopilotPanel
-              verifiedTemplates={flow.modelSuggestions?.verifiedTemplates ?? []}
+              verifiedTemplates={quickTemplateMatches.length > 0 ? quickTemplateMatches : flow.modelSuggestions?.verifiedTemplates ?? []}
               provisionedModels={[]}
               busy={flow.suggesting}
               selectable

@@ -20,6 +20,14 @@ import type {
   VerifiedTemplateMatch,
 } from '../types';
 
+export interface UploadAccountingCreatedResponse {
+  success: boolean;
+  clientCode: string;
+  blobPath: string;
+  fileName: string;
+  uploadedAtUtc: string;
+}
+
 function asRecord(v: unknown): Record<string, unknown> | null {
   return v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
 }
@@ -470,6 +478,32 @@ export async function suggestModelsFromBlob(params: {
   return parseModelsSuggestFromBlobResponse(raw);
 }
 
+/**
+ * POST /api/insights-engine/templates/match-from-blob
+ * Lightweight, deterministic template matching (optional AI refinement is server-controlled).
+ * Returns list shaped like VerifiedTemplateMatch for use in Copilot.
+ */
+export async function matchTemplatesFromBlob(params: {
+  clientCode: string;
+  blobPath: string;
+  maxRows?: number;
+  useSelectedClient?: boolean;
+}): Promise<VerifiedTemplateMatch[]> {
+  const body: Record<string, unknown> = {
+    clientCode: params.clientCode,
+    blobPath: params.blobPath,
+    maxRows: typeof params.maxRows === 'number' ? params.maxRows : 100,
+  };
+  if (params.useSelectedClient) body.useSelectedClient = true;
+
+  const raw = await apiService.post<unknown>('insights-engine/templates/match-from-blob', body);
+  const env = isApiEnvelopeFailure(raw);
+  if (env.failed) throw new Error(env.message);
+  const u = unwrapApiResponse(raw as ApiResponse<unknown>);
+  const list = unwrapList<unknown>(u, ['templates', 'verifiedTemplates', 'items', 'options']);
+  return list.map(normalizeFlatTemplateMatch).filter((m): m is VerifiedTemplateMatch => m !== null);
+}
+
 const BLOB_SAMPLE_MAX = 100;
 
 function columnNameFromCell(c: unknown): string {
@@ -647,6 +681,40 @@ export async function resolveBlobForReportInsights(params: {
     throw new Error('Invalid resolve-blob response: expected clientId and blobPath.');
   }
   return parsed;
+}
+
+/**
+ * POST /api/client-portal/uploads/accounting-created (multipart/form-data).
+ * Uploads a CSV/XLSX into {client}/accounting/created/ so Insights can pick it up.
+ */
+export async function uploadAccountingCreatedFile(args: {
+  file: File;
+  clientCode?: string;
+  useSelectedClient?: boolean;
+}): Promise<UploadAccountingCreatedResponse> {
+  const form = new FormData();
+  form.set('file', args.file);
+  if (args.clientCode) form.set('clientCode', args.clientCode);
+  if (args.useSelectedClient) form.set('useSelectedClient', 'true');
+
+  const raw = await apiService.post<UploadAccountingCreatedResponse>(
+    'client-portal/uploads/accounting-created',
+    form,
+    {
+      // Override the ApiService default JSON content-type for multipart.
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }
+  );
+
+  const o = asRecord(raw);
+  if (!o) throw new Error('Upload failed: invalid response from server.');
+  const success = o.success === true;
+  const clientCode = str(o, 'clientCode') ?? '';
+  const blobPath = str(o, 'blobPath') ?? '';
+  const fileName = str(o, 'fileName') ?? '';
+  const uploadedAtUtc = str(o, 'uploadedAtUtc') ?? '';
+  if (!success || !blobPath) throw new Error('Upload failed.');
+  return { success, clientCode, blobPath, fileName, uploadedAtUtc };
 }
 
 /**
