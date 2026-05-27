@@ -4,11 +4,11 @@ export interface User {
   name: string;
   role: 'admin' | 'accountant' | 'client';
   /**
-   * When role is 'client': 0 = general (no accounting firm UI), 1 = accountant (toggle + Clients/Reports).
-   * Omitted if API does not send it (legacy: treat as accountant-capable).
+   * When role is 'client': 0 = general (single client, no picker); 1 = accountant (client dropdown on Reports).
+   * See `canSelectReportClient` in reportClientAccess.ts.
    */
   userType?: number;
-  /** When role is 'client', true means they see Clients/Reports toggle (accountant-style view) */
+  /** When role is 'client', true if backend treats user as accountant (client dropdown on Reports). */
   isAccountant?: boolean;
   /** Client code from login (e.g. AU-001). Used for reporting APIs and multi-tenant blob folder resolution. */
   clientCode?: string;

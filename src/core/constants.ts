@@ -1,6 +1,6 @@
 export const APP_NAME = 'StudioTechBI';
 
-/** Set to false to restore subscription gating from API (`user.hasAIInsights`). */
+/** Set to false to gate Reports “Generate AI Insights” from API (`user.hasAIInsights`). */
 export const TEMP_FORCE_AI_INSIGHTS_FOR_ALL = true;
 
 export const DRAWER_WIDTH = 260;
@@ -41,16 +41,12 @@ export const ROUTES = {
     DASHBOARD: '/accountant/dashboard',
     CLIENTS: '/accountant/clients',
     REPORTS: '/accountant/reports',
-    INSIGHTS: '/accountant/insights',
-    DATA_STUDIO: '/accountant/data-studio',
   },
 
   CLIENT: {
     BASE: '/client',
     DASHBOARD: '/client/dashboard',
     REPORTS: '/client/reports',
-    INSIGHTS: '/client/insights',
-    DATA_STUDIO: '/client/data-studio',
     PROPOSITIONS: '/client/propositions',
     PROFILE: '/client/profile',
   },

@@ -9,6 +9,10 @@ import {
   Button,
   Stack,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   FormControl,
   InputLabel,
   Select,
@@ -24,7 +28,10 @@ import { Refresh } from "@mui/icons-material";
 
 import { useEffect, useRef, useState } from "react";
 
+import type { Report } from "powerbi-client";
+
 import { PowerBIEmbed } from "./PowerBIEmbed";
+import { collectVisualTitlesFromReport } from "./powerBiVisualTitles";
 
 import {
   generateReport,
@@ -38,6 +45,8 @@ import {
   canRefreshReportThisMonth,
   setLastRefreshMonth,
   getReportRefreshEligibility,
+  getAiInsightsForReportPage,
+  type ReportAiInsightsResponse,
   type ReportPeriod,
   type ReportPeriodType,
   type AvailableReportConfig,
@@ -50,6 +59,7 @@ import {
 import { useAuth } from "../../auth/AuthContext";
 
 import { useClientView } from "../../layouts/client/ClientViewContext";
+import { canSelectReportClient } from "../../core/reportClientAccess";
 
 import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
 
@@ -72,14 +82,13 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
 
   export const ClientReportsPage = () => {
   
-  const { user } = useAuth();
+  const { user, hasAIInsights } = useAuth();
   
-  const { viewMode, setViewMode, accountingFirmMode, selectedClientCode, setSelectedClientCode } = useClientView();
+  const { selectedClientCode, setSelectedClientCode } = useClientView();
   
   const isClientPortal = user?.role === "client";
-  /** UserType 0 = general client: single-client reports only (no accounting firm / Clients list). */
-  const showAccountingWorkflow =
-    isClientPortal && accountingFirmMode && user?.userType !== 0;
+  /** Client dropdown: backend accountant (userType 1 / isAccountant), not general clients. */
+  const showReportClientDropdown = isClientPortal && canSelectReportClient(user);
 
   /** When accounting firm mode: list from GET /api/reports/accountant-clients. */
   const [accountantClients, setAccountantClients] = useState<AccountantClient[]>([]);
@@ -90,7 +99,7 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
   const [reportConfigLoading, setReportConfigLoading] = useState(true);
 
   /** Client code: when accounting mode use selected client; else from report config or JWT. */
-  const clientCode = showAccountingWorkflow
+  const clientCode = showReportClientDropdown
     ? selectedClientCode
     : (reportConfig?.clientCode ?? user?.clientCode ?? "");
 
@@ -130,6 +139,15 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
   const [refreshEligibility, setRefreshEligibility] = useState<{
     canRefresh: boolean;
   } | null>(null);
+  const [aiPaneOpen, setAiPaneOpen] = useState(false);
+  const [activePageName, setActivePageName] = useState<string>("");
+  const [aiVisualTitles, setAiVisualTitles] = useState<string[]>([]);
+  /** Bumps when `PowerBIEmbed` calls `onLoaded` so we refresh titles even before `activePageName` updates. */
+  const [reportBindVersion, setReportBindVersion] = useState(0);
+  const embeddedReportRef = useRef<Report | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiResult, setAiResult] = useState<ReportAiInsightsResponse | null>(null);
 
   /** Latest period picker values for embed-token (ref so month changes do not re-fetch token). */
   const periodForEmbedRef = useRef({
@@ -149,11 +167,11 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
     reportConfigLoading ||
     availableReportsLoading ||
     embedTokenLoading ||
-    (showAccountingWorkflow && accountantClientsLoading);
+    (showReportClientDropdown && accountantClientsLoading);
 
-  // Load accountant clients when accounting firm mode is on
+  // Load clients for multi-client dropdown
   useEffect(() => {
-    if (!showAccountingWorkflow) return;
+    if (!showReportClientDropdown) return;
     let cancelled = false;
     (async () => {
       try {
@@ -167,7 +185,7 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
       }
     })();
     return () => { cancelled = true; };
-  }, [showAccountingWorkflow]);
+  }, [showReportClientDropdown]);
 
   // Step 1: Report config — when accounting mode use GET /api/reports/available/{clientCode}; else GET /api/reports/available
   useEffect(() => {
@@ -175,7 +193,7 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
     (async () => {
       try {
         setReportConfigLoading(true);
-        if (showAccountingWorkflow) {
+        if (showReportClientDropdown) {
           if (selectedClientCode) {
             const config = await getAvailableReportsConfigForClient(selectedClientCode, {
               useSelectedClient: true,
@@ -197,21 +215,41 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
       }
     })();
     return () => { cancelled = true; };
-  }, [showAccountingWorkflow, selectedClientCode, user?.clientCode]);
+  }, [showReportClientDropdown, selectedClientCode, user?.clientCode]);
 
   // If toggle is switched OFF, never reuse a previously embedded report from a selected client.
   useEffect(() => {
-    if (!showAccountingWorkflow) {
+    if (!showReportClientDropdown) {
       setSelectedReport(null);
       setEmbedError(null);
     }
-  }, [showAccountingWorkflow]);
+  }, [showReportClientDropdown]);
+
+  useEffect(() => {
+    embeddedReportRef.current = null;
+    setAiVisualTitles([]);
+  }, [selectedReport]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const report = embeddedReportRef.current;
+    if (!report || !selectedReport) return;
+
+    void (async () => {
+      const titles = await collectVisualTitlesFromReport(report);
+      if (!cancelled) setAiVisualTitles(titles);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePageName, selectedReport?.reportId, reportBindVersion]);
 
   const loadAvailableReports = async () => {
     try {
       setAvailableReportsLoading(true);
 
-      if (showAccountingWorkflow) {
+      if (showReportClientDropdown) {
         if (!selectedClientCode) {
           setAvailableReports(DEFAULT_AVAILABLE_REPORTS);
           return;
@@ -232,7 +270,7 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
 
   useEffect(() => {
     loadAvailableReports();
-  }, [showAccountingWorkflow, selectedClientCode]);
+  }, [showReportClientDropdown, selectedClientCode]);
 
   const loadRefreshEligibility = async () => {
     const eligibility = await getReportRefreshEligibility(clientCode);
@@ -269,7 +307,7 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
             ? (sm.length > 0 ? sm[0] : "2026-01")
             : (sap ?? "2026-01");
 
-        if (showAccountingWorkflow) {
+        if (showReportClientDropdown) {
           if (!selectedClientCode) return;
           const data = await getEmbedToken("monthly", period, selectedClientCode, {
             useSelectedClient: true,
@@ -302,7 +340,7 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
       setEmbedTokenLoading(false);
     };
   }, [
-    showAccountingWorkflow,
+    showReportClientDropdown,
     selectedClientCode,
     reportConfigLoading,
     reportConfig?.powerBIReportId,
@@ -393,8 +431,8 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
   };
   
   const loadReport = async (reportId: string): Promise<void> => {
-    const tokenClientCode = showAccountingWorkflow ? selectedClientCode : undefined;
-    if (showAccountingWorkflow && !selectedClientCode) return;
+    const tokenClientCode = showReportClientDropdown ? selectedClientCode : undefined;
+    if (showReportClientDropdown && !selectedClientCode) return;
     try {
       setLoading(true);
       setEmbedError(null);
@@ -404,7 +442,7 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
           ? (selectedMonths.length > 0 ? selectedMonths[0] : "2026-01")
           : (selectedAvailablePeriod ?? "2026-01"));
       const embed = await getEmbedToken(reportId, period, tokenClientCode, {
-        useSelectedClient: showAccountingWorkflow,
+        useSelectedClient: showReportClientDropdown,
       });
       setSelectedReport(embed);
       setEmbedError(null);
@@ -417,7 +455,7 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
   };
   
   /** Client users (non–accounting mode) must have clientCode; wait for config load before showing warning. */
-  if (isClientPortal && !showAccountingWorkflow && !reportConfigLoading && !clientCode) {
+  if (isClientPortal && !showReportClientDropdown && !reportConfigLoading && !clientCode) {
     return (
       <Box>
         <Alert severity="warning" sx={{ mt: 2 }}>
@@ -427,53 +465,7 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
     );
   }
 
-  if (showAccountingWorkflow && viewMode === "clients") {
-    return (
-      <Box>
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h4" fontWeight={600}>
-            Clients
-          </Typography>
-          <Typography color="text.secondary">
-            Select a client to view their reports
-          </Typography>
-        </Box>
-
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Client List
-          </Typography>
-          {accountantClientsLoading ? (
-            <Box display="flex" justifyContent="center" py={4}>
-              <CircularProgress />
-            </Box>
-          ) : accountantClients.length === 0 ? (
-            <Typography color="text.secondary">No clients available.</Typography>
-          ) : (
-            <List disablePadding>
-              {accountantClients.map((client) => (
-                <ListItemButton
-                  key={client.clientId}
-                  sx={{ borderRadius: 1, mb: 1 }}
-                  onClick={() => {
-                    setSelectedClientCode(client.clientCode);
-                    setViewMode("reports");
-                  }}
-                >
-                  <ListItemText
-                    primary={client.clientName || client.clientCode}
-                    secondary={client.clientCode}
-                  />
-                </ListItemButton>
-              ))}
-            </List>
-          )}
-        </Paper>
-      </Box>
-    );
-  }
-  
-  if (reportConfigLoading && !clientCode && !showAccountingWorkflow) {
+  if (reportConfigLoading && !clientCode && !showReportClientDropdown) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight={400}>
         <CircularProgress />
@@ -484,7 +476,7 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
   return (
   <Box>
     <Paper sx={{ p: 3 }}>
-      {showAccountingWorkflow && (
+      {showReportClientDropdown && (
         <FormControl size="small" sx={{ minWidth: 280, mb: 2, display: "block" }}>
           <InputLabel>Client</InputLabel>
           <Select
@@ -504,7 +496,7 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
           </Select>
         </FormControl>
       )}
-      {showAccountingWorkflow && !selectedClientCode && (
+      {showReportClientDropdown && !selectedClientCode && (
         <Alert severity="info" sx={{ mb: 2 }}>
           Select a client to view and manage their reports.
         </Alert>
@@ -641,7 +633,7 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
           <Button
             variant="contained"
             disabled={
-              (showAccountingWorkflow && !clientCode) ||
+              (showReportClientDropdown && !clientCode) ||
               generateLoading ||
               (reportPeriodType === "monthly"
                 ? selectedMonths.length === 0
@@ -710,6 +702,11 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
             accessToken={selectedReport.accessToken}
             embedUrl={selectedReport.embedUrl}
             reportId={selectedReport.reportId}
+            onLoaded={(r) => {
+              embeddedReportRef.current = r;
+              setReportBindVersion((v) => v + 1);
+            }}
+            onActivePageChanged={(name) => setActivePageName(name)}
             periodFolder={
               reportPeriodType === "monthly" ? null : selectedAvailablePeriod
             }
@@ -721,12 +718,133 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
           />
         )}
       </Box>
+
+      {hasAIInsights && (
+        <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2 }}>
+          <Button
+            variant="outlined"
+            disabled={showReportClientDropdown ? !selectedClientCode : !clientCode}
+            onClick={() => {
+              setAiPaneOpen(true);
+              setAiError(null);
+              setAiResult(null);
+            }}
+          >
+            Generate AI Insights
+          </Button>
+        </Stack>
+      )}
   
     </Paper>
-  
+
+    <Dialog open={aiPaneOpen} onClose={() => setAiPaneOpen(false)} maxWidth="sm" fullWidth>
+      <DialogTitle>AI insights — current report</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Summarises the embedded report view you have open (active page, period filters, and chart
+          titles). Insights reflect report data only.
+        </Typography>
+        <Stack spacing={1}>
+          <Typography variant="body2">
+            Client: <strong>{(showReportClientDropdown ? selectedClientCode : clientCode) || "—"}</strong>
+          </Typography>
+          <Typography variant="body2">
+            Period type: <strong>{reportPeriodType}</strong>
+          </Typography>
+          <Typography variant="body2">
+            Selected period:{" "}
+            <strong>
+              {reportPeriodType === "monthly"
+                ? (selectedMonths[0] ?? "—")
+                : (selectedAvailablePeriod ?? "—")}
+            </strong>
+          </Typography>
+          <Typography variant="body2">
+            Active page: <strong>{activePageName || "—"}</strong>
+          </Typography>
+          <Typography variant="caption" color="text.secondary" display="block">
+            Visuals on active page (for API): {aiVisualTitles.length}
+          </Typography>
+        </Stack>
+
+        {aiError && (
+          <Alert severity="warning" sx={{ mt: 2 }} onClose={() => setAiError(null)}>
+            {aiError}
+          </Alert>
+        )}
+
+        {aiResult && aiResult.enabled === false && (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            {aiResult.message || "AI is not enabled for this client."}
+          </Alert>
+        )}
+
+        {aiResult && aiResult.enabled && (
+          <Box sx={{ mt: 2 }}>
+            {aiResult.summary && (
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                {aiResult.summary}
+              </Typography>
+            )}
+            {aiResult.insights?.length ? (
+              <List dense>
+                {aiResult.insights.slice(0, 10).map((t, i) => (
+                  <ListItemText key={i} primary={`• ${t}`} />
+                ))}
+              </List>
+            ) : null}
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button
+          variant="contained"
+          disabled={aiLoading || (showReportClientDropdown ? !selectedClientCode : !clientCode)}
+          onClick={async () => {
+            const cc = showReportClientDropdown ? selectedClientCode : clientCode;
+            if (!cc) return;
+            const report = embeddedReportRef.current;
+            if (!report) {
+              setAiError(
+                "Report is not loaded yet. Wait for the report to finish rendering, then try again."
+              );
+              return;
+            }
+            setAiLoading(true);
+            setAiError(null);
+            setAiResult(null);
+            try {
+              const period =
+                reportPeriodType === "monthly"
+                  ? (selectedMonths[0] ?? undefined)
+                  : (selectedAvailablePeriod ?? undefined);
+              const visualTitles = await collectVisualTitlesFromReport(report);
+              setAiVisualTitles(visualTitles);
+              const res = await getAiInsightsForReportPage({
+                clientCode: cc,
+                useSelectedClient: showReportClientDropdown || undefined,
+                reportType: reportPeriodType,
+                period,
+                activePageName: activePageName || undefined,
+                visualTitles,
+              });
+              setAiResult(res);
+            } catch (e) {
+              setAiError(getEmbedTokenErrorMessage(e));
+            } finally {
+              setAiLoading(false);
+            }
+          }}
+        >
+          {aiLoading ? "Generating…" : "Generate"}
+        </Button>
+        <Button onClick={() => setAiPaneOpen(false)}>Close</Button>
+      </DialogActions>
+    </Dialog>
   </Box>
-  
+
   );
-  
+
   };
+
   

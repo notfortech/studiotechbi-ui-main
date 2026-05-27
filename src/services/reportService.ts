@@ -8,6 +8,15 @@ export interface EmbedTokenResponse {
   period?: string;
 }
 
+export interface ReportAiInsightsResponse {
+  enabled: boolean;
+  message?: string;
+  provider?: string;
+  summary?: string;
+  insights?: string[];
+  followUps?: string[];
+}
+
 export type ReportPeriodType =
   | "monthly"
   | "quarterly"
@@ -64,7 +73,7 @@ export function getMonthOptions(count = 24): ReportPeriod[] {
   return options;
 }
 
-/** Client from GET /api/reports/accountant-clients (when accounting firm toggle is on). */
+/** Client from GET /api/reports/accountant-clients (multi-client Reports dropdown). */
 export interface AccountantClient {
   clientId: string;
   clientCode: string;
@@ -227,7 +236,7 @@ export async function checkMasterAndRefreshReport(
 /**
  * Call GET /api/reports/accountant-clients.
  * Returns all clients the current user can access (via companies or single client).
- * Use when the accounting firm toggle is on to drive the clients list.
+ * Use for the multi-client Reports client dropdown.
  */
 export async function getAccountantClients(): Promise<AccountantClient[]> {
   const data = await apiService.get<AccountantClient[]>(
@@ -437,6 +446,44 @@ export async function getEmbedTokenForInsightsWithTemplateFallback(args: {
       useSelectedClient: args.useSelectedClient,
     });
   }
+}
+
+/**
+ * POST /api/reports/ai-insights
+ * Returns AI insights for the active embedded report page (metadata-only today).
+ * Future: optional `copilotPayload` when backend accepts Power BI Copilot capture — see docs/AI_REPORT_INSIGHTS.md.
+ */
+export async function getAiInsightsForReportPage(args: {
+  clientCode: string;
+  useSelectedClient?: boolean;
+  reportType: string;
+  period?: string;
+  activePageName?: string;
+  visualTitles?: string[];
+  /** Reserved for Power BI Copilot output when the API supports it. */
+  copilotPayload?: unknown;
+}): Promise<ReportAiInsightsResponse> {
+  const body: Record<string, unknown> = {
+    clientCode: args.clientCode,
+    useSelectedClient: args.useSelectedClient === true,
+    reportType: args.reportType,
+    period: args.period,
+    activePageName: args.activePageName,
+    visualTitles: args.visualTitles ?? [],
+    ...(args.copilotPayload !== undefined ? { copilotPayload: args.copilotPayload } : {}),
+  };
+  const data = await apiService.post<ReportAiInsightsResponse | { message?: string }>(
+    `/reports/ai-insights`,
+    body
+  );
+  if (data && typeof data === 'object' && 'enabled' in (data as Record<string, unknown>)) {
+    return data as ReportAiInsightsResponse;
+  }
+  const message =
+    data && typeof data === 'object' && 'message' in data && typeof (data as { message?: unknown }).message === 'string'
+      ? (data as { message: string }).message
+      : 'AI insights not available.';
+  return { enabled: false, message };
 }
 
 /** Fetch available reporting periods for a client. Uses clientCode for multi-tenant. */

@@ -28,6 +28,12 @@ export interface UploadAccountingCreatedResponse {
   uploadedAtUtc: string;
 }
 
+export interface CreateReportRequestResponse {
+  success: boolean;
+  requestId: string;
+  status: string;
+}
+
 function asRecord(v: unknown): Record<string, unknown> | null {
   return v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
 }
@@ -715,6 +721,48 @@ export async function uploadAccountingCreatedFile(args: {
   const uploadedAtUtc = str(o, 'uploadedAtUtc') ?? '';
   if (!success || !blobPath) throw new Error('Upload failed.');
   return { success, clientCode, blobPath, fileName, uploadedAtUtc };
+}
+
+/**
+ * GET /api/templates/{templateId}/design-image
+ * Returns a browser object URL for the image. Caller should revokeObjectURL when done.
+ */
+export async function getTemplateDesignImageObjectUrl(templateId: string): Promise<string> {
+  if (!templateId) throw new Error('templateId is required.');
+  // apiService.get returns response.data; with axios responseType=blob that will be a Blob
+  const blob = (await apiService.get<Blob>(`templates/${encodeURIComponent(templateId)}/design-image`, {
+    responseType: 'blob',
+  })) as unknown as Blob;
+  if (!blob || typeof (blob as Blob).size !== 'number') {
+    throw new Error('Invalid image response.');
+  }
+  return URL.createObjectURL(blob);
+}
+
+/**
+ * POST /api/reports/requests
+ * Create a pending report request when the user confirms a template design.
+ */
+export async function createReportRequest(args: {
+  templateId: string;
+  blobPath?: string;
+  clientCode?: string;
+  useSelectedClient?: boolean;
+}): Promise<CreateReportRequestResponse> {
+  const body: Record<string, unknown> = {
+    templateId: args.templateId,
+    blobPath: args.blobPath,
+    clientCode: args.clientCode,
+    useSelectedClient: args.useSelectedClient === true,
+  };
+  const raw = await apiService.post<unknown>('reports/requests', body);
+  const o = asRecord(raw);
+  if (!o) throw new Error('Invalid response from server.');
+  const success = o.success === true;
+  const requestId = str(o, 'requestId') ?? '';
+  const status = str(o, 'status') ?? '';
+  if (!success || !requestId) throw new Error('Request failed.');
+  return { success, requestId, status };
 }
 
 /**

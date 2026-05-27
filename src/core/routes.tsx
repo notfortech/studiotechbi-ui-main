@@ -27,8 +27,6 @@ import { AdminReportsPage } from '../portals/admin/ReportsPage';
 import { AccountantDashboard } from '../portals/accountant/AccountantDashboard';
 import { AccountantClientsPage } from '../portals/accountant/ClientsPage';
 import { AccountantReportsPage } from '../portals/accountant/ReportsPage';
-import { InsightsPage } from '../portals/accountant/InsightsPage';
-import { ModelingStudioPage } from '../features/modeling-studio/pages/ModelingStudioPage';
 import { ClientDashboard } from '../portals/client/ClientDashboard';
 import { ClientReportsPage } from '../portals/client/ReportsPage';
 import { PropositionsPage } from '../portals/client/PropositionsPage';
@@ -160,11 +158,11 @@ export const routes: RouteObject[] = [
       },
       {
         path: 'insights',
-        element: <InsightsPage />,
+        element: <Navigate to={ROUTES.ACCOUNTANT.REPORTS} replace />,
       },
       {
         path: 'data-studio',
-        element: <ModelingStudioPage />,
+        element: <Navigate to={ROUTES.ACCOUNTANT.REPORTS} replace />,
       },
     ],
   },
@@ -197,12 +195,16 @@ export const routes: RouteObject[] = [
         element: <ProfilePage />,
       },
       {
+        path: 'property',
+        element: <Navigate to={ROUTES.CLIENT.REPORTS} replace />,
+      },
+      {
         path: 'insights',
-        element: <InsightsPage />,
+        element: <Navigate to={ROUTES.CLIENT.REPORTS} replace />,
       },
       {
         path: 'data-studio',
-        element: <ModelingStudioPage />,
+        element: <Navigate to={ROUTES.CLIENT.REPORTS} replace />,
       },
     ],
   },

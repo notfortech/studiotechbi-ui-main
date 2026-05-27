@@ -21,21 +21,17 @@ import { useAuth } from '../../../auth/AuthContext';
 import { ClientViewContext } from '../../../layouts/client/ClientViewContext';
 import {
   getAccountantClients,
-  getDefaultEmbedPeriod,
-  getEmbedTokenForInsightsWithTemplateFallback,
-  getEmbedTokenErrorMessage,
   type AccountantClient,
-  type EmbedTokenResponse,
 } from '../../../services/reportService';
-import { PowerBIEmbed } from '../../../portals/client/PowerBIEmbed';
 import { BlobSampleTable } from '../components/BlobSampleTable';
 import { CopilotPanel } from '../components/CopilotPanel';
 import { Loader } from '../components/Loader';
 import { useSimpleInsights } from '../hooks/useSimpleInsights';
-import { ProposedModelCard } from '../components/ProposedModelCard';
 import {
+  createReportRequest,
   generateCanonicalPlansFromBlob,
   formatInsightsApiError,
+  getTemplateDesignImageObjectUrl,
   matchTemplatesFromBlob,
   uploadAccountingCreatedFile,
 } from '../services/insightService';
@@ -127,7 +123,6 @@ export function InsightsPage() {
   );
 
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-  const generationCost = 1_000;
   const [tab, setTab] = useState<'models' | 'canonical'>('models');
 
   const [prompt, setPrompt] = useState('');
@@ -136,22 +131,21 @@ export function InsightsPage() {
   const [canonicalError, setCanonicalError] = useState<string | null>(null);
   const [canonical, setCanonical] = useState<CanonicalPlansResponse | null>(null);
 
-  const [embedToken, setEmbedToken] = useState<EmbedTokenResponse | null>(null);
-  const [embedLoading, setEmbedLoading] = useState(false);
-  const [embedError, setEmbedError] = useState<string | null>(null);
-
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadOk, setUploadOk] = useState<string | null>(null);
   const [quickTemplateMatches, setQuickTemplateMatches] = useState<
     { template: { templateId: string; templateName?: string; industry?: string; version?: string }; matchScore: number; matchReasons: string[] }[]
   >([]);
+  const [lastUploadedBlobPath, setLastUploadedBlobPath] = useState<string | null>(null);
 
-  const embedPeriod = useMemo(() => {
-    const p = flow.activeReport?.periods;
-    if (p && p.length > 0) return p[0];
-    return getDefaultEmbedPeriod();
-  }, [flow.activeReport?.periods]);
+  const [designUrl, setDesignUrl] = useState<string | null>(null);
+  const [designLoading, setDesignLoading] = useState(false);
+  const [designError, setDesignError] = useState<string | null>(null);
+
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [confirmOk, setConfirmOk] = useState<string | null>(null);
 
   const selectedTemplateLabel = useMemo(() => {
     const list = quickTemplateMatches.length > 0 ? quickTemplateMatches : flow.modelSuggestions?.verifiedTemplates ?? [];
@@ -164,50 +158,43 @@ export function InsightsPage() {
   useEffect(() => {
     setSelectedTemplateId('');
     setQuickTemplateMatches([]);
+    setLastUploadedBlobPath(null);
+    setDesignUrl(null);
+    setDesignError(null);
+    setConfirmOk(null);
+    setConfirmError(null);
   }, [reportClientCode, flow.modelSuggestions?.verifiedTemplates?.length]);
 
   useEffect(() => {
-    if (!selectedTemplateId || !reportClientCode || !flow.hasActiveReport) {
-      setEmbedToken(null);
-      setEmbedError(null);
-      setEmbedLoading(false);
+    if (!selectedTemplateId) {
+      setDesignUrl(null);
+      setDesignError(null);
+      setDesignLoading(false);
       return;
     }
     let cancelled = false;
-    setEmbedLoading(true);
-    setEmbedError(null);
-    setEmbedToken(null);
+    let prevUrl: string | null = null;
+    setDesignLoading(true);
+    setDesignError(null);
     void (async () => {
       try {
-        const token = await getEmbedTokenForInsightsWithTemplateFallback({
-          templateId: selectedTemplateId,
-          period: embedPeriod,
-          clientCode: reportClientCode,
-          useSelectedClient: useSelectedClientForApis || undefined,
-        });
-        if (!cancelled) {
-          setEmbedToken(token);
-          setEmbedError(null);
-        }
+        const url = await getTemplateDesignImageObjectUrl(selectedTemplateId);
+        prevUrl = url;
+        if (!cancelled) setDesignUrl(url);
       } catch (e) {
         if (!cancelled) {
-          setEmbedToken(null);
-          setEmbedError(getEmbedTokenErrorMessage(e));
+          setDesignUrl(null);
+          setDesignError(formatInsightsApiError(e));
         }
       } finally {
-        if (!cancelled) setEmbedLoading(false);
+        if (!cancelled) setDesignLoading(false);
       }
     })();
     return () => {
       cancelled = true;
+      if (prevUrl) URL.revokeObjectURL(prevUrl);
     };
-  }, [
-    selectedTemplateId,
-    reportClientCode,
-    flow.hasActiveReport,
-    embedPeriod,
-    useSelectedClientForApis,
-  ]);
+  }, [selectedTemplateId]);
 
   const handleAccountantClientChange = (e: SelectChangeEvent<string>) => {
     setAccountantClientCode(e.target.value);
@@ -220,12 +207,6 @@ export function InsightsPage() {
   const needsClientPick = explicitClientOnly && !reportClientCode;
   const showNoReportYet =
     !flow.loading && !flow.hasActiveReport && !flow.error && !needsClientPick;
-  const sampleLoadedOk = !!flow.sample && !flow.sampleError;
-  const canGenerate =
-    sampleLoadedOk &&
-    !!flow.resolvedBlob?.clientId &&
-    !!flow.resolvedBlob?.blobPath &&
-    !flow.suggesting;
 
   const canUpload =
     !!reportClientCode &&
@@ -361,6 +342,7 @@ export function InsightsPage() {
                           useSelectedClient: useSelectedClientForApis || undefined,
                         });
                         setUploadOk(`Uploaded to report storage: ${res.blobPath}`);
+                        setLastUploadedBlobPath(res.blobPath);
                         try {
                           const matches = await matchTemplatesFromBlob({
                             clientCode: reportClientCode,
@@ -382,34 +364,7 @@ export function InsightsPage() {
                     }}
                   />
                 </Button>
-                <Button
-                  variant="contained"
-                  disabled={!canGenerate}
-                  onClick={async () => {
-                    if (!canGenerate) {
-                      return;
-                    }
-                    await flow.generateAiInsights();
-                  }}
-                >
-                  {flow.suggesting
-                    ? 'Generating…'
-                    : `Generate AI Insights (${generationCost.toLocaleString()} credits)`}
-                </Button>
               </Stack>
-
-              {flow.modelSuggestions?.proposedModels?.length ? (
-                <Box sx={{ mt: 1.5 }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Dashboards possible
-                  </Typography>
-                  <Stack spacing={1}>
-                    {flow.modelSuggestions.proposedModels.map((m, idx) => (
-                      <ProposedModelCard key={m.id ?? `${m.templateId ?? 'm'}-${idx}`} model={m} />
-                    ))}
-                  </Stack>
-                </Box>
-              ) : null}
             </Paper>
           </Box>
 
@@ -437,30 +392,86 @@ export function InsightsPage() {
           <Box sx={{ flex: 1, minWidth: 0, minHeight: 420, display: 'flex', flexDirection: 'column' }}>
             <Paper variant="outlined" sx={{ p: 1.5, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 400 }}>
               <Typography variant="subtitle2" fontWeight={700} gutterBottom>
-                Live report
+                Template design
               </Typography>
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
                 {selectedTemplateId
                   ? selectedTemplateLabel || selectedTemplateId
-                  : 'Select a Copilot template to load the embedded Power BI report.'}
+                  : 'Select the closest template from Copilot to preview its design.'}
               </Typography>
-              {embedLoading && (
+
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mb: 1 }}>
+                <Button
+                  variant="contained"
+                  disabled={!selectedTemplateId || confirmLoading}
+                  onClick={async () => {
+                    if (!selectedTemplateId || !reportClientCode) return;
+                    setConfirmLoading(true);
+                    setConfirmError(null);
+                    setConfirmOk(null);
+                    try {
+                      const blobPath = lastUploadedBlobPath ?? flow.resolvedBlob?.blobPath ?? undefined;
+                      const res = await createReportRequest({
+                        templateId: selectedTemplateId,
+                        blobPath,
+                        clientCode: reportClientCode,
+                        useSelectedClient: useSelectedClientForApis || undefined,
+                      });
+                      setConfirmOk(`Request created: ${res.requestId} (${res.status})`);
+                    } catch (e) {
+                      setConfirmError(formatInsightsApiError(e));
+                    } finally {
+                      setConfirmLoading(false);
+                    }
+                  }}
+                >
+                  {confirmLoading ? 'Confirming…' : 'Confirm'}
+                </Button>
+                {confirmOk && (
+                  <Alert severity="success" sx={{ flex: 1 }} onClose={() => setConfirmOk(null)}>
+                    {confirmOk}
+                  </Alert>
+                )}
+              </Stack>
+
+              {confirmError && (
+                <Alert severity="warning" sx={{ mb: 1 }} onClose={() => setConfirmError(null)}>
+                  {confirmError}
+                </Alert>
+              )}
+
+              {designLoading && (
                 <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
                   <CircularProgress size={32} />
                 </Box>
               )}
-              {embedError && !embedLoading && (
+              {designError && !designLoading && (
                 <Alert severity="info" sx={{ mb: 1 }}>
-                  {embedError}
+                  {designError}
                 </Alert>
               )}
-              {!embedLoading && !embedError && embedToken && (
-                <Box sx={{ flex: 1, minHeight: 400, width: '100%' }}>
-                  <PowerBIEmbed
-                    accessToken={embedToken.accessToken}
-                    embedUrl={embedToken.embedUrl}
-                    reportId={embedToken.reportId}
-                    periodValues={[embedPeriod]}
+
+              {!designLoading && !designError && designUrl && (
+                <Box
+                  sx={{
+                    flex: 1,
+                    minHeight: 320,
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: 1,
+                    borderColor: 'divider',
+                    borderRadius: 1,
+                    overflow: 'hidden',
+                    bgcolor: 'background.default',
+                  }}
+                >
+                  <Box
+                    component="img"
+                    src={designUrl}
+                    alt={selectedTemplateLabel || selectedTemplateId}
+                    sx={{ width: '100%', height: '100%', objectFit: 'contain' }}
                   />
                 </Box>
               )}

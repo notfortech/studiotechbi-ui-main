@@ -1,6 +1,25 @@
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
-import { useState } from 'react';
+import {
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  Stack,
+  Typography,
+  type SelectChangeEvent,
+} from '@mui/material';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../../auth/AuthContext';
+import { ClientViewContext } from '../../../layouts/client/ClientViewContext';
+import { getAccountantClients, type AccountantClient } from '../../../services/reportService';
+import { CopilotPanel } from '../../insights/components/CopilotPanel';
 import { AiPanel } from '../components/AiPanel';
 import { DataPreview } from '../components/DataPreview';
 import { ModelDesigner } from '../components/ModelDesigner';
@@ -10,9 +29,34 @@ import { StepsPane } from '../components/StepsPane';
 import { useModelingStudio } from '../hooks/useModelingStudio';
 import type { ModelSummary } from '../types';
 import { approveModel, suggestModelSummaryFromBlob } from '../services/modelingApprovalService';
+import { formatInsightsApiError } from '../../insights/services/insightService';
+import { useSimpleInsights } from '../../insights/hooks/useSimpleInsights';
+
+/**
+ * Client code to resolve report + blob (`GET /reports/available/{clientCode}` and insights-engine).
+ * For accountants and client+accounting-firm users, this must be the *selected* client, not a blind fallback.
+ */
+function resolveReportClientCodeForInsights(params: {
+  user: { role?: string; clientCode?: string; userType?: number } | null;
+  clientView: { accountingFirmMode?: boolean; selectedClientCode?: string } | undefined;
+  accountantSelectedClient: string;
+}): string | undefined {
+  const { user, clientView, accountantSelectedClient } = params;
+  if (!user) return undefined;
+  if (user.role === 'accountant') {
+    return accountantSelectedClient || undefined;
+  }
+  const accountingFirmUser =
+    user.role === 'client' && clientView?.accountingFirmMode && user.userType !== 0;
+  if (accountingFirmUser) {
+    return clientView?.selectedClientCode || undefined;
+  }
+  return user.clientCode;
+}
 
 export function ModelingStudioPage() {
   const { user } = useAuth();
+  const clientView = useContext(ClientViewContext);
   const studio = useModelingStudio();
   const [showAfter, setShowAfter] = useState(false);
   const [summary, setSummary] = useState<ModelSummary | null>(null);
@@ -25,6 +69,56 @@ export function ModelingStudioPage() {
   const isRel = studio.selection?.kind === 'relationship';
 
   const clientId = user?.clientCode || user?.id || '';
+
+  const [accountantClientCode, setAccountantClientCode] = useState('');
+  const [accountantClients, setAccountantClients] = useState<AccountantClient[]>([]);
+
+  const isAccountant = user?.role === 'accountant';
+  const showAccountingWorkflow =
+    user?.role === 'client' && clientView?.accountingFirmMode && user.userType !== 0;
+  const explicitClientOnly = isAccountant || showAccountingWorkflow;
+  const useSelectedClientForApis =
+    (isAccountant && !!accountantClientCode) ||
+    (showAccountingWorkflow && !!clientView?.selectedClientCode);
+
+  useEffect(() => {
+    if (!isAccountant) return;
+    let cancel = false;
+    void (async () => {
+      try {
+        const list = await getAccountantClients();
+        if (!cancel) setAccountantClients(list);
+      } catch {
+        if (!cancel) setAccountantClients([]);
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [isAccountant]);
+
+  const reportClientCode = useMemo(
+    () =>
+      resolveReportClientCodeForInsights({
+        user,
+        clientView,
+        accountantSelectedClient: accountantClientCode,
+      }),
+    [user, clientView, accountantClientCode]
+  );
+
+  const insights = useSimpleInsights(
+    clientId || undefined,
+    reportClientCode,
+    explicitClientOnly,
+    useSelectedClientForApis
+  );
+
+  const [insightsOk, setInsightsOk] = useState<string | null>(null);
+
+  const handleAccountantClientChange = (e: SelectChangeEvent<string>) => {
+    setAccountantClientCode(e.target.value);
+  };
 
   const handleGenerateModels = async () => {
     if (!clientId) return;
@@ -59,6 +153,10 @@ export function ModelingStudioPage() {
       setLoading(false);
     }
   };
+
+  const needsClientPick = explicitClientOnly && !reportClientCode;
+  const canGenerateAiInsights =
+    !!reportClientCode && !needsClientPick && insights.hasActiveReport && !insights.loading && !insights.suggesting;
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 112px)', minHeight: 0 }}>
@@ -99,6 +197,80 @@ export function ModelingStudioPage() {
           </Button>
         </Stack>
       </Stack>
+
+      <Paper variant="outlined" sx={{ p: 2, mb: 2, flexShrink: 0 }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'stretch', md: 'center' }}>
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Typography variant="subtitle2" fontWeight={800} gutterBottom>
+              AI Insights (moved from Insights)
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Generate template matches/suggestions here so we can later integrate schema-to-dataset matching inside Data studio.
+            </Typography>
+          </Box>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
+            {isAccountant && (
+              <FormControl size="small" sx={{ minWidth: 240 }}>
+                <InputLabel id="data-studio-acct-client-label">Client</InputLabel>
+                <Select
+                  labelId="data-studio-acct-client-label"
+                  label="Client"
+                  value={accountantClientCode}
+                  onChange={handleAccountantClientChange}
+                >
+                  <MenuItem value="">
+                    <em>Select a client</em>
+                  </MenuItem>
+                  {accountantClients.map((c) => (
+                    <MenuItem key={c.clientId} value={c.clientCode}>
+                      {c.clientName ?? c.clientCode} ({c.clientCode})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
+            <Button
+              variant="contained"
+              disabled={!canGenerateAiInsights}
+              onClick={async () => {
+                if (!canGenerateAiInsights) return;
+                setInsightsOk(null);
+                try {
+                  await insights.generateAiInsights();
+                  setInsightsOk('Generated AI insights. Review template suggestions on the right.');
+                } catch (e) {
+                  // generateAiInsights already captures errors into hook state; keep this as a no-op.
+                  setInsightsOk(null);
+                }
+              }}
+            >
+              {insights.suggesting ? 'Generating…' : 'Generate AI Insights'}
+            </Button>
+          </Stack>
+        </Stack>
+
+        {needsClientPick && !insights.loading && (
+          <Alert severity="info" sx={{ mt: 1.5 }}>
+            Select a client to generate AI insights.
+          </Alert>
+        )}
+        {insights.error && (
+          <Alert severity="error" sx={{ mt: 1.5 }}>
+            {insights.error}
+          </Alert>
+        )}
+        {insights.suggestionsError && (
+          <Alert severity="warning" sx={{ mt: 1.5 }}>
+            {insights.suggestionsError}
+          </Alert>
+        )}
+        {insightsOk && (
+          <Alert severity="success" sx={{ mt: 1.5 }} onClose={() => setInsightsOk(null)}>
+            {insightsOk}
+          </Alert>
+        )}
+      </Paper>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -174,7 +346,17 @@ export function ModelingStudioPage() {
             </div>
           </div>
           <div className="col-span-12 min-h-0 md:col-span-3">
-            <AiPanel step={studio.selectedStep} relationship={studio.selectedRelationship} />
+            <Stack sx={{ height: '100%', minHeight: 0 }}>
+              <CopilotPanel
+                verifiedTemplates={insights.modelSuggestions?.verifiedTemplates ?? []}
+                provisionedModels={[]}
+                busy={insights.suggesting}
+                readOnly
+                compact
+                insightsProvider={insights.modelSuggestions?.insights?.provider}
+              />
+              <AiPanel step={studio.selectedStep} relationship={studio.selectedRelationship} />
+            </Stack>
           </div>
         </div>
       )}

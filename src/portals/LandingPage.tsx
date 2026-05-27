@@ -21,13 +21,11 @@ import {
   TableRow,
   Paper,
 } from "@mui/material";
-import * as React from "react";
 import {
   BarChart as BarChartIcon,
   TrendingUp,
   Login as LoginIcon,
-  ChevronLeft,
-  ChevronRight,
+  AutoAwesome as AutoAwesomeIcon,
 } from "@mui/icons-material";
 import { Link as RouterLink } from "react-router-dom";
 import { ROUTES } from "../core/constants";
@@ -50,13 +48,13 @@ const SUBSCRIPTIONS = [
   {
     key: "lite",
     title: "Lite",
-    priceAud: 1299,
+    priceAud: 1999,
     description: "Multi-client reporting (no AI assistance)",
   },
   {
     key: "premium",
     title: "Premium",
-    priceAud: 1999,
+    priceAud: 3999,
     description: "Multi-client reporting with AI-assisted model suggestions",
   },
 ] as const;
@@ -75,207 +73,17 @@ const INSIGHTS_PREVIEW_ROWS = [
   { date: "2026-04-05", invoiceNo: "INV-2045", type: "Sale", counterparty: "ACME Corp", category: "Sales", amount: "860" },
 ] as const;
 
-const INSIGHTS_MODEL_PREVIEW = [
-  {
-    title: "Sales performance",
-    subtitle: "Revenue trends, top customers, category mix",
-    tables: [
-      {
-        name: "ORDER_LINES",
-        fields: ["order_line_id", "order_id", "product_id", "customer_id", "price", "quantity", "date"],
-      },
-      { name: "DATE", fields: ["date"] },
-      { name: "CUSTOMERS", fields: ["customer_id", "name", "state"] },
-      { name: "PRODUCTS", fields: ["product_id", "name", "category"] },
-    ],
-    links: [
-      { from: "DATE", to: "ORDER_LINES" },
-      { from: "CUSTOMERS", to: "ORDER_LINES" },
-      { from: "PRODUCTS", to: "ORDER_LINES" },
-    ],
-  },
-  {
-    title: "Expense control",
-    subtitle: "Spend by vendor, category, anomalies",
-    tables: [
-      {
-        name: "TRANSACTIONS",
-        fields: ["txn_id", "vendor", "category", "amount", "date"],
-      },
-      { name: "DATE", fields: ["date"] },
-      { name: "VENDORS", fields: ["vendor_id", "name"] },
-    ],
-    links: [
-      { from: "DATE", to: "TRANSACTIONS" },
-      { from: "VENDORS", to: "TRANSACTIONS" },
-    ],
-  },
-  {
-    title: "Cashflow snapshot",
-    subtitle: "Inflow vs outflow and timing gaps",
-    tables: [
-      { name: "CASH_EVENTS", fields: ["event_id", "type", "amount", "date"] },
-      { name: "DATE", fields: ["date"] },
-      { name: "ACCOUNTS", fields: ["account_id", "name", "currency"] },
-    ],
-    links: [
-      { from: "DATE", to: "CASH_EVENTS" },
-      { from: "ACCOUNTS", to: "CASH_EVENTS" },
-    ],
-  },
-  {
-    title: "Invoice health",
-    subtitle: "Volumes, average value, seasonality",
-    tables: [
-      { name: "INVOICES", fields: ["invoice_id", "invoice_no", "customer_id", "amount", "date"] },
-      { name: "DATE", fields: ["date"] },
-      { name: "CUSTOMERS", fields: ["customer_id", "name"] },
-    ],
-    links: [
-      { from: "DATE", to: "INVOICES" },
-      { from: "CUSTOMERS", to: "INVOICES" },
-    ],
-  },
+const REPORT_AI_PREVIEW_BULLETS = [
+  "Summarises the report page you are viewing in plain business language",
+  "Uses chart titles and period filters as context for the analysis",
+  "Optional deeper insights when Power BI Copilot output is available (roadmap)",
 ] as const;
-
-function SchemaModelCard(props: {
-  title: string;
-  subtitle: string;
-  tables: { name: string; fields: string[] }[];
-  links: { from: string; to: string }[];
-  primaryMain: string;
-}) {
-  const { title, subtitle, tables, links, primaryMain } = props;
-  const headerBg = alpha(primaryMain, 0.9);
-  const border = alpha(primaryMain, 0.18);
-  const shadow = `0 10px 30px ${alpha("#0b1020", 0.12)}`;
-
-  // Layout positions (simple, deterministic): one "fact" in middle-right, up to 3 dims around.
-  const fact = tables[0];
-  const dims = tables.slice(1, 4);
-  const factX = 150;
-  const factY = 44;
-  const factW = 170;
-  const factH = 132;
-
-  const dimPositions = [
-    { x: 20, y: 90, w: 95, h: 40 }, // left
-    { x: 332, y: 22, w: 110, h: 70 }, // top-right
-    { x: 332, y: 112, w: 110, h: 70 }, // bottom-right
-  ];
-
-  function tableBox(t: { name: string; fields: string[] }, x: number, y: number, w: number, h: number) {
-    const fields = t.fields.slice(0, Math.max(2, Math.min(6, Math.floor((h - 34) / 14))));
-    return (
-      <g>
-        <rect x={x} y={y} width={w} height={h} rx={10} fill="white" stroke={border} />
-        <rect x={x} y={y} width={w} height={26} rx={10} fill={headerBg} />
-        <text x={x + 12} y={y + 17} fontSize="10" fontWeight="700" fill="white">
-          {t.name}
-        </text>
-        {fields.map((f, i) => (
-          <text key={f} x={x + 12} y={y + 44 + i * 14} fontSize="10" fill="#111827">
-            {f}
-          </text>
-        ))}
-      </g>
-    );
-  }
-
-  // Draw connectors as simple lines; connect each dim to fact.
-  const connectors = dims
-    .map((d, idx) => {
-      const p = dimPositions[idx];
-      if (!p) return null;
-      const fromCenter = { x: p.x + p.w, y: p.y + p.h / 2 };
-      const toCenter = { x: factX, y: factY + factH / 2 };
-      return (
-        <path
-          key={`${d.name}-${idx}`}
-          d={`M ${fromCenter.x} ${fromCenter.y} C ${fromCenter.x + 22} ${fromCenter.y}, ${toCenter.x - 22} ${toCenter.y}, ${toCenter.x} ${toCenter.y}`}
-          fill="none"
-          stroke={alpha(primaryMain, 0.55)}
-          strokeWidth="2"
-        />
-      );
-    })
-    .filter(Boolean);
-
-  return (
-    <Card
-      elevation={0}
-      sx={{
-        border: `1px solid ${alpha(primaryMain, 0.14)}`,
-        borderRadius: 2,
-        overflow: "hidden",
-        bgcolor: alpha(primaryMain, 0.03),
-      }}
-    >
-      <CardContent sx={{ p: 2.5 }}>
-        <Typography variant="subtitle2" fontWeight={800} gutterBottom>
-          {title}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          {subtitle}
-        </Typography>
-        <Box
-          sx={{
-            border: `1px solid ${alpha(primaryMain, 0.12)}`,
-            borderRadius: 2,
-            bgcolor: "white",
-            boxShadow: shadow,
-            p: 1,
-          }}
-        >
-          <Box
-            component="svg"
-            viewBox="0 0 460 210"
-            sx={{ width: "100%", height: 190, display: "block" }}
-            aria-label="Model preview diagram"
-          >
-            <defs>
-              <marker
-                id="arrow"
-                viewBox="0 0 10 10"
-                refX="8"
-                refY="5"
-                markerWidth="6"
-                markerHeight="6"
-                orient="auto-start-reverse"
-              >
-                <path d="M 0 0 L 10 5 L 0 10 z" fill={alpha(primaryMain, 0.55)} />
-              </marker>
-            </defs>
-            {/* connectors */}
-            {connectors}
-            {/* tables */}
-            {dims.map((d, idx) => {
-              const p = dimPositions[idx];
-              if (!p) return null;
-              return tableBox(d, p.x, p.y, p.w, p.h);
-            })}
-            {fact ? tableBox(fact, factX, factY, factW, factH) : null}
-          </Box>
-        </Box>
-      </CardContent>
-    </Card>
-  );
-}
 
 export function LandingPage() {
   const theme = useTheme();
   const isSmall = useMediaQuery(theme.breakpoints.down("md"));
   const primaryMain = theme.palette.primary.main;
   const primaryDark = theme.palette.primary.dark;
-  const [copilotIdx, setCopilotIdx] = React.useState(0);
-  const touchStartXRef = React.useRef<number | null>(null);
-  const touchDeltaXRef = React.useRef(0);
-
-  const clampIdx = (n: number) =>
-    Math.max(0, Math.min(INSIGHTS_MODEL_PREVIEW.length - 1, n));
-
-  const goPrev = () => setCopilotIdx((i) => clampIdx(i - 1));
-  const goNext = () => setCopilotIdx((i) => clampIdx(i + 1));
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
@@ -409,16 +217,16 @@ export function LandingPage() {
         </Grid>
       </Container>
 
-      {/* Public Insights preview */}
+      {/* Report AI insights preview */}
       <Box sx={{ py: { xs: 5, md: 7 }, borderTop: `1px solid ${alpha(primaryMain, 0.1)}` }}>
         <Container maxWidth="lg">
           <Stack spacing={1} sx={{ mb: 3 }}>
             <Typography variant="h5" fontWeight={700}>
-              See it before you log in
+              AI insights on your reports
             </Typography>
             <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 760 }}>
-              A quick preview of what Insights looks like: a small read-only sample and a swipeable set of
-              dashboard options based on the data structure.
+              While viewing an embedded Power BI report, generate a functional summary of what the data is
+              showing — based on the active page, filters, and visuals.
             </Typography>
           </Stack>
 
@@ -496,137 +304,22 @@ export function LandingPage() {
                 }}
               >
                 <CardContent sx={{ p: 3 }}>
-                  <Stack direction="row" alignItems="baseline" justifyContent="space-between" sx={{ mb: 2 }}>
+                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
+                    <AutoAwesomeIcon sx={{ color: primaryMain }} />
                     <Typography variant="subtitle1" fontWeight={700}>
-                      Copilot (preview)
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Swipe to browse
+                      Generate AI Insights (in Reports)
                     </Typography>
                   </Stack>
-
-                  <Box
-                    sx={{
-                      position: "relative",
-                      overflow: "hidden",
-                      borderRadius: 2,
-                    }}
-                    aria-label="Swipeable dashboard model preview"
-                    onTouchStart={(e) => {
-                      touchStartXRef.current = e.touches[0]?.clientX ?? null;
-                      touchDeltaXRef.current = 0;
-                    }}
-                    onTouchMove={(e) => {
-                      const start = touchStartXRef.current;
-                      if (start == null) return;
-                      const x = e.touches[0]?.clientX ?? start;
-                      touchDeltaXRef.current = x - start;
-                    }}
-                    onTouchEnd={() => {
-                      const dx = touchDeltaXRef.current;
-                      touchStartXRef.current = null;
-                      touchDeltaXRef.current = 0;
-                      if (Math.abs(dx) < 40) return;
-                      if (dx > 0) goPrev();
-                      else goNext();
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        display: "flex",
-                        width: `${INSIGHTS_MODEL_PREVIEW.length * 100}%`,
-                        transform: `translateX(-${copilotIdx * (100 / INSIGHTS_MODEL_PREVIEW.length)}%)`,
-                        transition: "transform 260ms ease",
-                      }}
-                    >
-                      {INSIGHTS_MODEL_PREVIEW.map((m) => (
-                        <Box
-                          key={m.title}
-                          sx={{
-                            width: `${100 / INSIGHTS_MODEL_PREVIEW.length}%`,
-                            px: 0.25,
-                          }}
-                        >
-                          <SchemaModelCard
-                            title={m.title}
-                            subtitle={m.subtitle}
-                            tables={m.tables as unknown as { name: string; fields: string[] }[]}
-                            links={m.links as unknown as { from: string; to: string }[]}
-                            primaryMain={primaryMain}
-                          />
-                        </Box>
-                      ))}
-                    </Box>
-
-                    <Button
-                      aria-label="Previous model"
-                      onClick={goPrev}
-                      disabled={copilotIdx === 0}
-                      variant="outlined"
-                      size="small"
-                      sx={{
-                        position: "absolute",
-                        top: "50%",
-                        left: 8,
-                        transform: "translateY(-50%)",
-                        minWidth: 0,
-                        px: 1,
-                        borderColor: alpha(primaryMain, 0.22),
-                        bgcolor: "white",
-                        "&:hover": { bgcolor: alpha("#fff", 0.92) },
-                      }}
-                    >
-                      <ChevronLeft fontSize="small" />
-                    </Button>
-                    <Button
-                      aria-label="Next model"
-                      onClick={goNext}
-                      disabled={copilotIdx === INSIGHTS_MODEL_PREVIEW.length - 1}
-                      variant="outlined"
-                      size="small"
-                      sx={{
-                        position: "absolute",
-                        top: "50%",
-                        right: 8,
-                        transform: "translateY(-50%)",
-                        minWidth: 0,
-                        px: 1,
-                        borderColor: alpha(primaryMain, 0.22),
-                        bgcolor: "white",
-                        "&:hover": { bgcolor: alpha("#fff", 0.92) },
-                      }}
-                    >
-                      <ChevronRight fontSize="small" />
-                    </Button>
-                  </Box>
-
-                  <Stack direction="row" spacing={0.8} justifyContent="center" sx={{ mt: 1.5 }}>
-                    {INSIGHTS_MODEL_PREVIEW.map((_, i) => (
-                      <Box
-                        key={i}
-                        onClick={() => setCopilotIdx(i)}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            setCopilotIdx(i);
-                          }
-                        }}
-                        sx={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: 999,
-                          bgcolor: i === copilotIdx ? primaryMain : alpha(primaryMain, 0.22),
-                          cursor: "pointer",
-                        }}
-                        aria-label={`Show model ${i + 1}`}
-                      />
+                  <Stack spacing={1.5} component="ul" sx={{ m: 0, pl: 2.5 }}>
+                    {REPORT_AI_PREVIEW_BULLETS.map((line) => (
+                      <Typography key={line} component="li" variant="body2" color="text.secondary">
+                        {line}
+                      </Typography>
                     ))}
                   </Stack>
-
-                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-                    In the portal, Copilot suggestions are generated from your data and verified against templates.
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 2 }}>
+                    Open any embedded report, then use Generate AI Insights for a summary of what you are
+                    looking at.
                   </Typography>
                 </CardContent>
               </Card>
