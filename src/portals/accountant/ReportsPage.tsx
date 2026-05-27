@@ -6,6 +6,10 @@ import {
   Stack,
   Alert,
   CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   FormControl,
   InputLabel,
   Select,
@@ -16,11 +20,14 @@ import {
   ListItemText,
   IconButton,
   Tooltip,
+  List,
 } from "@mui/material";
 import { Refresh } from "@mui/icons-material";
+import type { Report } from "powerbi-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { PowerBIEmbed } from "../client/PowerBIEmbed";
+import { collectVisualTitlesFromReport } from "../client/powerBiVisualTitles";
 import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
 import {
   generateReport,
@@ -29,10 +36,10 @@ import {
   getEmbedToken,
   getEmbedTokenErrorMessage,
   getMonthOptions,
-  canRefreshReportThisMonth,
   setLastRefreshMonth,
-  getReportRefreshEligibility,
   getAccountantClients,
+  getAiInsightsForReportPage,
+  type ReportAiInsightsResponse,
   type ReportPeriod,
   type ReportPeriodType,
   type EmbedTokenResponse,
@@ -40,6 +47,8 @@ import {
   REPORT_PERIOD_TYPE_LABELS,
   DEFAULT_REPORT_PERIOD_TYPE,
 } from "../../services/reportService";
+import { useAuth } from "../../auth/AuthContext";
+import { canSelectReportClient } from "../../core/reportClientAccess";
 
 const DEFAULT_AVAILABLE_REPORTS: ReportPeriod[] = [
   { label: "April 2025", value: "2025-04" },
@@ -59,6 +68,8 @@ const DEFAULT_AVAILABLE_REPORTS: ReportPeriod[] = [
 ];
 
 export const AccountantReportsPage = () => {
+  const { user, hasAIInsights } = useAuth();
+  const showReportClientDropdown = canSelectReportClient(user);
   const location = useLocation();
   const navigate = useNavigate();
   const [clients, setClients] = useState<AccountantClient[]>([]);
@@ -75,11 +86,18 @@ export const AccountantReportsPage = () => {
     useState<ReportPeriodType>(DEFAULT_REPORT_PERIOD_TYPE);
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
   const [selectedAvailablePeriod, setSelectedAvailablePeriod] = useState<string | null>(null);
-  const [refreshEligibility, setRefreshEligibility] = useState<{ canRefresh: boolean } | null>(null);
   const [selectedReport, setSelectedReport] = useState<EmbedTokenResponse | null>(null);
   /** When embed-token fails, show this instead of iframe (e.g. "No report configured for this client"). */
   const [embedError, setEmbedError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [aiPaneOpen, setAiPaneOpen] = useState(false);
+  const [activePageName, setActivePageName] = useState("");
+  const [aiVisualTitles, setAiVisualTitles] = useState<string[]>([]);
+  const [reportBindVersion, setReportBindVersion] = useState(0);
+  const embeddedReportRef = useRef<Report | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiResult, setAiResult] = useState<ReportAiInsightsResponse | null>(null);
 
   const periodForEmbedRef = useRef({
     reportPeriodType,
@@ -91,7 +109,6 @@ export const AccountantReportsPage = () => {
     selectedMonths,
     selectedAvailablePeriod,
   };
-  const { hasAIInsights } = useAuth();
   /** Progress bar: Check for updates, or loading embed / periods after accountant picks or changes client. */
   const reportProgressActive =
     generateLoading ||
@@ -182,6 +199,26 @@ export const AccountantReportsPage = () => {
     setEmbedError(null);
     void loadReport();
   }, [selectedClientCode, loadReport]);
+
+  useEffect(() => {
+    embeddedReportRef.current = null;
+    setAiVisualTitles([]);
+  }, [selectedReport]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const report = embeddedReportRef.current;
+    if (!report || !selectedReport) return;
+
+    void (async () => {
+      const titles = await collectVisualTitlesFromReport(report);
+      if (!cancelled) setAiVisualTitles(titles);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePageName, selectedReport?.reportId, reportBindVersion]);
 
   const handleGenerateReport = async () => {
     setGenerateError(null);
@@ -280,6 +317,7 @@ export const AccountantReportsPage = () => {
 
       <Paper sx={{ p: 3 }}>
         <Box sx={{ mb: 3 }}>
+          {showReportClientDropdown && (
           <FormControl
             size="small"
             sx={{ minWidth: 280, mb: 2, display: "block" }}
@@ -303,6 +341,7 @@ export const AccountantReportsPage = () => {
               ))}
             </Select>
           </FormControl>
+          )}
           {selectedClientCode && (
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Client: {clients.find((c) => c.clientCode === selectedClientCode)?.clientName ?? selectedClientCode}
@@ -510,6 +549,11 @@ export const AccountantReportsPage = () => {
               accessToken={selectedReport.accessToken}
               embedUrl={selectedReport.embedUrl}
               reportId={selectedReport.reportId}
+              onLoaded={(r) => {
+                embeddedReportRef.current = r;
+                setReportBindVersion((v) => v + 1);
+              }}
+              onActivePageChanged={(name) => setActivePageName(name)}
               monthFilter={null}
               periodFolder={
                 reportPeriodType === "monthly" ? null : selectedAvailablePeriod
@@ -533,7 +577,127 @@ export const AccountantReportsPage = () => {
             </Box>
           )}
         </Box>
+
+        {hasAIInsights && (
+          <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2 }}>
+            <Button
+              variant="outlined"
+              disabled={!selectedClientCode}
+              onClick={() => {
+                setAiPaneOpen(true);
+                setAiError(null);
+                setAiResult(null);
+              }}
+            >
+              Generate AI Insights
+            </Button>
+          </Stack>
+        )}
       </Paper>
+
+      <Dialog open={aiPaneOpen} onClose={() => setAiPaneOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>AI insights — current report</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Summarises the embedded report view you have open (active page, period filters, and chart
+            titles). Insights reflect report data only.
+          </Typography>
+          <Stack spacing={1}>
+            <Typography variant="body2">
+              Client: <strong>{selectedClientCode || "—"}</strong>
+            </Typography>
+            <Typography variant="body2">
+              Period type: <strong>{reportPeriodType}</strong>
+            </Typography>
+            <Typography variant="body2">
+              Selected period:{" "}
+              <strong>
+                {reportPeriodType === "monthly"
+                  ? (selectedMonths[0] ?? "—")
+                  : (selectedAvailablePeriod ?? "—")}
+              </strong>
+            </Typography>
+            <Typography variant="body2">
+              Active page: <strong>{activePageName || "—"}</strong>
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block">
+              Visuals on active page (for API): {aiVisualTitles.length}
+            </Typography>
+          </Stack>
+
+          {aiError && (
+            <Alert severity="warning" sx={{ mt: 2 }} onClose={() => setAiError(null)}>
+              {aiError}
+            </Alert>
+          )}
+
+          {aiResult && aiResult.enabled === false && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              {aiResult.message || "AI is not enabled for this client."}
+            </Alert>
+          )}
+
+          {aiResult && aiResult.enabled && (
+            <Box sx={{ mt: 2 }}>
+              {aiResult.summary && (
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  {aiResult.summary}
+                </Typography>
+              )}
+              {aiResult.insights?.length ? (
+                <List dense>
+                  {aiResult.insights.slice(0, 10).map((t, i) => (
+                    <ListItemText key={i} primary={`• ${t}`} />
+                  ))}
+                </List>
+              ) : null}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            variant="contained"
+            disabled={aiLoading || !selectedClientCode}
+            onClick={async () => {
+              if (!selectedClientCode) return;
+              const report = embeddedReportRef.current;
+              if (!report) {
+                setAiError(
+                  "Report is not loaded yet. Wait for the report to finish rendering, then try again."
+                );
+                return;
+              }
+              setAiLoading(true);
+              setAiError(null);
+              setAiResult(null);
+              try {
+                const period =
+                  reportPeriodType === "monthly"
+                    ? (selectedMonths[0] ?? undefined)
+                    : (selectedAvailablePeriod ?? undefined);
+                const visualTitles = await collectVisualTitlesFromReport(report);
+                setAiVisualTitles(visualTitles);
+                const res = await getAiInsightsForReportPage({
+                  clientCode: selectedClientCode,
+                  useSelectedClient: true,
+                  reportType: reportPeriodType,
+                  period,
+                  activePageName: activePageName || undefined,
+                  visualTitles,
+                });
+                setAiResult(res);
+              } catch (e) {
+                setAiError(getEmbedTokenErrorMessage(e));
+              } finally {
+                setAiLoading(false);
+              }
+            }}
+          >
+            {aiLoading ? "Generating…" : "Generate"}
+          </Button>
+          <Button onClick={() => setAiPaneOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

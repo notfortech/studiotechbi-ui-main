@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../core/constants';
 import { apiService } from './api';
 
 export interface Template {
@@ -31,7 +32,7 @@ export async function uploadTemplate(formData: FormData): Promise<Template> {
 
 /** Download template file; returns blob URL or triggers download. Backend returns file stream. */
 export async function downloadTemplate(templateId: string): Promise<void> {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+  const baseUrl = API_BASE_URL;
   const token = localStorage.getItem('authToken');
   const url = `${baseUrl}/admin/templates/${templateId}/download`;
   const res = await fetch(url, {

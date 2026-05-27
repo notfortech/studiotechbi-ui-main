@@ -14,7 +14,6 @@ import {
   Dashboard as DashboardIcon,
   Business as BusinessIcon,
   Assessment as AssessmentIcon,
-  Insights as InsightsIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { DRAWER_WIDTH, ROUTES } from '../../core/constants';
@@ -28,7 +27,6 @@ const navigationItems: NavigationItem[] = [
   { id: 'dashboard', title: 'Dashboard', path: ROUTES.ACCOUNTANT.DASHBOARD, icon: <DashboardIcon /> },
   { id: 'clients', title: 'Clients', path: ROUTES.ACCOUNTANT.CLIENTS, icon: <BusinessIcon /> },
   { id: 'reports', title: 'Reports', path: ROUTES.ACCOUNTANT.REPORTS, icon: <AssessmentIcon /> },
-  { id: 'insights', title: 'Insights', path: ROUTES.ACCOUNTANT.INSIGHTS, icon: <InsightsIcon /> },
 ];
 
 export const AccountantSidebar = ({ open }: AccountantSidebarProps) => {

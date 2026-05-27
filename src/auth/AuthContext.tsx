@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { TEMP_FORCE_AI_INSIGHTS_FOR_ALL } from '../core/constants';
 import { AuthContextType, User } from '../core/types';
 import { authService } from '../services/authService';
 
@@ -54,7 +55,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     register,
     logout,
     isAuthenticated: !!user,
-    hasAIInsights: !!user?.hasAIInsights
+    hasAIInsights: TEMP_FORCE_AI_INSIGHTS_FOR_ALL || !!user?.hasAIInsights,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

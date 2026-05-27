@@ -21,6 +21,8 @@ interface Props {
   accessToken: string;
   reportId: string;
   onLoaded?: (report: Report) => void;
+  /** Fires when the active report page changes (best-effort). */
+  onActivePageChanged?: (pageName: string) => void;
 
   monthFilter?: MonthFilter | null;
 
@@ -40,6 +42,7 @@ export const PowerBIEmbed = ({
   accessToken,
   reportId,
   onLoaded,
+  onActivePageChanged,
   monthFilter = null,
   periodFolder = null,
   periodValues = null,
@@ -139,6 +142,16 @@ catch {
 
 };
 
+const emitActivePage = async (report: Report) => {
+  try {
+    const page = await report.getActivePage();
+    const name = (page as unknown as { displayName?: string; name?: string }).displayName || (page as unknown as { name?: string }).name;
+    if (name) onActivePageChanged?.(name);
+  } catch {
+    /* ignore */
+  }
+};
+
 useEffect(() => {
 if (!reportRef.current) return;
 
@@ -193,7 +206,12 @@ report.on("rendered", () => {
   onLoaded?.(report);
 
   applyFilter(report);
+  emitActivePage(report);
 
+});
+
+report.on("pageChanged", () => {
+  emitActivePage(report);
 });
 
 }, [

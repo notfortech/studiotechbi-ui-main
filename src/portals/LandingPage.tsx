@@ -13,55 +13,49 @@ import {
   Stack,
   Chip,
   alpha,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
 } from "@mui/material";
 import {
   BarChart as BarChartIcon,
-  School as SchoolIcon,
-  Public as PublicIcon,
   TrendingUp,
-  Assessment,
-  Groups,
   Login as LoginIcon,
+  AutoAwesome as AutoAwesomeIcon,
 } from "@mui/icons-material";
 import { Link as RouterLink } from "react-router-dom";
 import { ROUTES } from "../core/constants";
 
-const REGIONS = [
+const SUBSCRIPTIONS = [
   {
-    name: "India",
-    description:
-      "Powering data-driven decisions for enterprises and MSMBs with local compliance, GST-ready reporting, and regional analytics.",
-    stat: "15+ industries",
-    icon: <PublicIcon sx={{ fontSize: 40 }} />,
+    key: "pro",
+    title: "Pro",
+    priceAud: 699,
+    description: "Manual + semi-automated reporting",
+    badge: "Popular",
   },
   {
-    name: "Australia",
-    description:
-      "Analytics and reporting solutions tailored for AU businesses—from mining and agriculture to finance and retail.",
-    stat: "APAC-ready",
-    icon: <PublicIcon sx={{ fontSize: 40 }} />,
+    key: "pro-ai",
+    title: "Pro (AI Assisted)",
+    priceAud: 999,
+    description: "Generic AI-assisted automatic reporting (single client)",
+    badge: "Best value",
   },
   {
-    name: "New Zealand",
-    description:
-      "Scalable BI and reporting for NZ organisations, with focus on agriculture, tourism, and professional services.",
-    stat: "NZ timezone support",
-    icon: <PublicIcon sx={{ fontSize: 40 }} />,
-  },
-] as const;
-
-const TRAINING_PACKAGES = [
-  {
-    title: "MSMBs",
-    description:
-      "Structured analytics training for small and medium businesses: dashboards, KPIs, and self-service reporting.",
-    icon: <Assessment sx={{ fontSize: 36 }} />,
+    key: "lite",
+    title: "Lite",
+    priceAud: 1999,
+    description: "Multi-client reporting (no AI assistance)",
   },
   {
-    title: "Corporate",
-    description:
-      "Enterprise programmes: advanced analytics, Power BI, data governance, and centre-of-excellence enablement.",
-    icon: <Groups sx={{ fontSize: 36 }} />,
+    key: "premium",
+    title: "Premium",
+    priceAud: 3999,
+    description: "Multi-client reporting with AI-assisted model suggestions",
   },
 ] as const;
 
@@ -70,6 +64,20 @@ const VALUE_STATS = [
   { label: "One source of truth", value: "Unified reporting" },
   { label: "Scalable insights", value: "From startup to enterprise" },
 ];
+
+const INSIGHTS_PREVIEW_ROWS = [
+  { date: "2026-04-01", invoiceNo: "INV-2041", type: "Sale", counterparty: "XYZ Traders", category: "Sales", amount: "3,240" },
+  { date: "2026-04-02", invoiceNo: "INV-2042", type: "Purchase", counterparty: "Office Supplies Co", category: "Expenses", amount: "410" },
+  { date: "2026-04-03", invoiceNo: "INV-2043", type: "Sale", counterparty: "RentCorp", category: "Sales", amount: "1,180" },
+  { date: "2026-04-04", invoiceNo: "INV-2044", type: "Purchase", counterparty: "Fuel Station", category: "Expenses", amount: "95" },
+  { date: "2026-04-05", invoiceNo: "INV-2045", type: "Sale", counterparty: "ACME Corp", category: "Sales", amount: "860" },
+] as const;
+
+const REPORT_AI_PREVIEW_BULLETS = [
+  "Summarises the report page you are viewing in plain business language",
+  "Uses chart titles and period filters as context for the analysis",
+  "Optional deeper insights when Power BI Copilot output is available (roadmap)",
+] as const;
 
 export function LandingPage() {
   const theme = useTheme();
@@ -209,68 +217,195 @@ export function LandingPage() {
         </Grid>
       </Container>
 
-      {/* Regions */}
+      {/* Report AI insights preview */}
+      <Box sx={{ py: { xs: 5, md: 7 }, borderTop: `1px solid ${alpha(primaryMain, 0.1)}` }}>
+        <Container maxWidth="lg">
+          <Stack spacing={1} sx={{ mb: 3 }}>
+            <Typography variant="h5" fontWeight={700}>
+              AI insights on your reports
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 760 }}>
+              While viewing an embedded Power BI report, generate a functional summary of what the data is
+              showing — based on the active page, filters, and visuals.
+            </Typography>
+          </Stack>
+
+          <Grid container spacing={3}>
+            <Grid size={{ xs: 12, md: 7 }}>
+              <Card
+                variant="outlined"
+                sx={{
+                  borderColor: alpha(primaryMain, 0.18),
+                  bgcolor: "background.paper",
+                  overflow: "hidden",
+                }}
+              >
+                <CardContent sx={{ p: 3 }}>
+                  <Stack direction="row" alignItems="baseline" justifyContent="space-between" sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" fontWeight={700}>
+                      Data sample (preview)
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Read-only · 5 rows shown
+                    </Typography>
+                  </Stack>
+                  <TableContainer
+                    component={Paper}
+                    variant="outlined"
+                    sx={{
+                      maxHeight: 320,
+                      borderColor: alpha(primaryMain, 0.12),
+                      "& .MuiTableCell-root": { whiteSpace: "nowrap" },
+                    }}
+                  >
+                    <Table size="small" stickyHeader aria-label="Insights preview table">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 700, bgcolor: alpha(primaryMain, 0.06) }}>Date</TableCell>
+                          <TableCell sx={{ fontWeight: 700, bgcolor: alpha(primaryMain, 0.06) }}>Invoice</TableCell>
+                          <TableCell sx={{ fontWeight: 700, bgcolor: alpha(primaryMain, 0.06) }}>Type</TableCell>
+                          <TableCell sx={{ fontWeight: 700, bgcolor: alpha(primaryMain, 0.06) }}>
+                            Customer/Vendor
+                          </TableCell>
+                          <TableCell sx={{ fontWeight: 700, bgcolor: alpha(primaryMain, 0.06) }}>Category</TableCell>
+                          <TableCell sx={{ fontWeight: 700, bgcolor: alpha(primaryMain, 0.06) }} align="right">
+                            Amount
+                          </TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {INSIGHTS_PREVIEW_ROWS.map((r) => (
+                          <TableRow key={r.invoiceNo} hover>
+                            <TableCell>{r.date}</TableCell>
+                            <TableCell>{r.invoiceNo}</TableCell>
+                            <TableCell>{r.type}</TableCell>
+                            <TableCell>{r.counterparty}</TableCell>
+                            <TableCell>{r.category}</TableCell>
+                            <TableCell align="right">{r.amount}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                    This is demo data for illustration only.
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 5 }}>
+              <Card
+                variant="outlined"
+                sx={{
+                  height: "100%",
+                  borderColor: alpha(primaryMain, 0.18),
+                  bgcolor: "background.paper",
+                }}
+              >
+                <CardContent sx={{ p: 3 }}>
+                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
+                    <AutoAwesomeIcon sx={{ color: primaryMain }} />
+                    <Typography variant="subtitle1" fontWeight={700}>
+                      Generate AI Insights (in Reports)
+                    </Typography>
+                  </Stack>
+                  <Stack spacing={1.5} component="ul" sx={{ m: 0, pl: 2.5 }}>
+                    {REPORT_AI_PREVIEW_BULLETS.map((line) => (
+                      <Typography key={line} component="li" variant="body2" color="text.secondary">
+                        {line}
+                      </Typography>
+                    ))}
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 2 }}>
+                    Open any embedded report, then use Generate AI Insights for a summary of what you are
+                    looking at.
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        </Container>
+      </Box>
+
+      {/* Subscriptions */}
       <Box
         sx={{
           bgcolor: alpha(primaryMain, 0.04),
-          py: { xs: 5, md: 8 },
+          py: { xs: 5, md: 6 },
           borderTop: `1px solid ${alpha(primaryMain, 0.1)}`,
         }}
       >
         <Container maxWidth="lg">
-          <Typography
-            variant="h5"
-            fontWeight={700}
-            textAlign="center"
-            gutterBottom
-            sx={{ color: "text.primary" }}
-          >
-            Where we operate
-          </Typography>
-          <Typography
-            variant="body1"
-            color="text.secondary"
-            textAlign="center"
-            sx={{ mb: 4, maxWidth: 560, mx: "auto" }}
-          >
-            Trusted analytics and reporting support for businesses across three
-            key markets.
-          </Typography>
-          <Grid container spacing={3}>
-            {REGIONS.map((region) => (
-              <Grid key={region.name} size={{ xs: 12, md: 4 }}>
+          <Stack spacing={1} sx={{ mb: 3 }} textAlign="center">
+            <Typography variant="h5" fontWeight={800}>
+              Subscriptions
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 820, mx: "auto" }}>
+              Choose a plan, then sign up or log in to activate. Pricing shown in AUD.
+            </Typography>
+          </Stack>
+
+          <Grid container spacing={2.5} alignItems="stretch">
+            {SUBSCRIPTIONS.map((s) => (
+              <Grid key={s.key} size={{ xs: 12, sm: 6, md: 3 }}>
                 <Card
-                  elevation={0}
+                  variant="outlined"
                   sx={{
                     height: "100%",
+                    borderColor: alpha(primaryMain, 0.18),
                     bgcolor: "background.paper",
-                    border: `1px solid ${alpha(primaryMain, 0.15)}`,
                     borderRadius: 2,
                   }}
                 >
                   <CardContent sx={{ p: 3 }}>
-                    <Box
-                      sx={{
-                        color: primaryMain,
-                        mb: 2,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 1,
-                      }}
-                    >
-                      {region.icon}
-                      <Typography variant="h6" fontWeight={600}>
-                        {region.name}
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                      <Typography variant="h6" fontWeight={800}>
+                        {s.title}
                       </Typography>
-                    </Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      {region.description}
+                      {s.badge ? (
+                        <Chip
+                          size="small"
+                          label={s.badge}
+                          sx={{ bgcolor: alpha(primaryMain, 0.14), fontWeight: 700 }}
+                        />
+                      ) : null}
+                    </Stack>
+
+                    <Typography variant="h4" fontWeight={900} sx={{ letterSpacing: "-0.02em" }}>
+                      ${s.priceAud}
+                      <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                        AUD
+                      </Typography>
                     </Typography>
-                    <Chip
-                      label={region.stat}
-                      size="small"
-                      sx={{ bgcolor: alpha(primaryMain, 0.12), fontWeight: 500 }}
-                    />
+
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1.2, mb: 2 }}>
+                      {s.description}
+                    </Typography>
+
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                      <Button
+                        component={RouterLink}
+                        to={ROUTES.SIGNUP}
+                        variant="contained"
+                        size="small"
+                        sx={{ px: 2 }}
+                      >
+                        Sign up
+                      </Button>
+                      <Button
+                        component={RouterLink}
+                        to={ROUTES.LOGIN}
+                        variant="outlined"
+                        size="small"
+                        sx={{ px: 2 }}
+                      >
+                        Log in
+                      </Button>
+                      <Button component={RouterLink} to={ROUTES.LOGIN} variant="text" size="small" sx={{ px: 1.5 }}>
+                        Activate
+                      </Button>
+                    </Stack>
                   </CardContent>
                 </Card>
               </Grid>
@@ -278,62 +413,6 @@ export function LandingPage() {
           </Grid>
         </Container>
       </Box>
-
-      {/* Analytics Training Wing */}
-      <Container maxWidth="lg" sx={{ py: { xs: 5, md: 8 } }}>
-        <Box sx={{ textAlign: "center", mb: 4 }}>
-          <Chip
-            label="Analytics Training Wing"
-            size="medium"
-            sx={{
-              bgcolor: alpha(primaryMain, 0.15),
-              color: primaryDark,
-              fontWeight: 600,
-              mb: 2,
-            }}
-          />
-          <Typography variant="h5" fontWeight={700} gutterBottom>
-            Analytics training for every scale
-          </Typography>
-          <Typography variant="body1" color="text.secondary" maxWidth={560} sx={{ mx: "auto" }}>
-            We offer structured analytics training packages for MSMBs and
-            corporate clients—from fundamentals to centre-of-excellence
-            programmes.
-          </Typography>
-        </Box>
-        <Grid container spacing={3} justifyContent="center">
-          {TRAINING_PACKAGES.map((pkg) => (
-            <Grid key={pkg.title} size={{ xs: 12, sm: 6 }}>
-              <Card
-                variant="outlined"
-                sx={{
-                  height: "100%",
-                  borderColor: alpha(primaryMain, 0.25),
-                  borderRadius: 2,
-                  "&:hover": {
-                    borderColor: primaryMain,
-                    bgcolor: alpha(primaryMain, 0.04),
-                  },
-                }}
-              >
-                <CardContent sx={{ p: 3, display: "flex", gap: 2, alignItems: "flex-start" }}>
-                  <Box sx={{ color: primaryMain, flexShrink: 0 }}>
-                    {pkg.icon}
-                  </Box>
-                  <Box>
-                    <Typography variant="h6" fontWeight={600} gutterBottom>
-                      {pkg.title}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {pkg.description}
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-      </Container>
 
       {/* CTA + Footer */}
       <Box

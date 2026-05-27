@@ -21,6 +21,12 @@ function normalizeAuthPayload(response: any): {
   if (!data?.user || !data?.accessToken) {
     throw new Error(data?.message || 'Invalid login response from server');
   }
+  const userType =
+    typeof data.user.userType === 'number'
+      ? data.user.userType
+      : data.user.userType != null && !Number.isNaN(Number(data.user.userType))
+        ? Number(data.user.userType)
+        : undefined;
   const user: User = {
     ...data.user,
     id: data.user.id ?? data.user.userId ?? '',
@@ -30,13 +36,8 @@ function normalizeAuthPayload(response: any): {
       const r = (data.user.roles?.[0] ?? data.user.role ?? 'client').toString().toLowerCase();
       return (r === 'accountant' || r === 'admin' || r === 'client') ? r : 'client';
     })(),
-    isAccountant: !!data.user.isAccountant,
-    userType:
-      typeof data.user.userType === 'number'
-        ? data.user.userType
-        : data.user.userType != null && !Number.isNaN(Number(data.user.userType))
-          ? Number(data.user.userType)
-          : undefined,
+    userType,
+    isAccountant: !!data.user.isAccountant || userType === 1,
     clientCode: data.user.clientCode ?? data.user.clientId ?? undefined,
     clientName: data.user.clientName ?? undefined,
   };
