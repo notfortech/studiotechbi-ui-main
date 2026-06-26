@@ -74,7 +74,7 @@ export const ClientSidebar = ({ open }: ClientSidebarProps) => {
           {navigationItems.map((item) => (
             <ListItem key={item.id} disablePadding>
               <ListItemButton
-                selected={location.pathname === item.path}
+                selected={location.pathname === item.path || location.pathname.startsWith(item.path + '/')}
                 onClick={() => handleNavigation(item.path)}
                 sx={{
                   mx: 1,
@@ -94,7 +94,7 @@ export const ClientSidebar = ({ open }: ClientSidebarProps) => {
                 <ListItemIcon
                   sx={{
                     minWidth: 40,
-                    color: location.pathname === item.path ? 'white' : 'inherit',
+                    color: (location.pathname === item.path || location.pathname.startsWith(item.path + '/')) ? 'white' : 'inherit',
                   }}
                 >
                   {item.icon}

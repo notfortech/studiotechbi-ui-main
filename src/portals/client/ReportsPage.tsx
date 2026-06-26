@@ -23,6 +23,7 @@ import {
   IconButton,
   Tooltip,
 } from "@mui/material";
+import { ArrowBack as ArrowBackIcon } from "@mui/icons-material";
 
 import { Refresh } from "@mui/icons-material";
 
@@ -57,9 +58,11 @@ import {
 } from "../../services/reportService";
 
 import { useAuth } from "../../auth/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 import { useClientView } from "../../layouts/client/ClientViewContext";
 import { canSelectReportClient } from "../../core/reportClientAccess";
+import { ROUTES } from "../../core/constants";
 
 import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
 
@@ -83,7 +86,8 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
   export const ClientReportsPage = () => {
   
   const { user, hasAIInsights } = useAuth();
-  
+  const navigate = useNavigate();
+
   const { selectedClientCode, setSelectedClientCode } = useClientView();
   
   const isClientPortal = user?.role === "client";
@@ -476,6 +480,17 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
   return (
   <Box>
     <Paper sx={{ p: 3 }}>
+      <Box sx={{ mb: 2 }}>
+        <Button
+          startIcon={<ArrowBackIcon />}
+          onClick={() => navigate(ROUTES.CLIENT.REPORTS)}
+          size="small"
+          sx={{ color: "text.secondary" }}
+        >
+          Back to Reports
+        </Button>
+      </Box>
+
       {showReportClientDropdown && (
         <FormControl size="small" sx={{ minWidth: 280, mb: 2, display: "block" }}>
           <InputLabel>Client</InputLabel>
