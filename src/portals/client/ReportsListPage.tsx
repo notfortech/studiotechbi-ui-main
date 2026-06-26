@@ -103,6 +103,18 @@ export const ReportsListPage = () => {
     return () => { cancelled = true; };
   }, [showClientDropdown, selectedClientCode]);
 
+  // NEW: Auto-open if there is exactly one report
+  useEffect(() => {
+    if (configsLoading) return;
+
+    // Don't auto-open for accountant mode
+    if (showClientDropdown) return;
+  
+    if (configs.length === 1) {
+      handleOpenReport(configs[0]);
+    }
+  }, [configsLoading, configs, showClientDropdown]);
+
   const handleOpenReport = (config: AvailableReportConfig) => {
     if (showClientDropdown) {
       setSelectedClientCode(config.clientCode);
