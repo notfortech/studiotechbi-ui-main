@@ -47,6 +47,7 @@ export const ROUTES = {
     BASE: '/client',
     DASHBOARD: '/client/dashboard',
     REPORTS: '/client/reports',
+    REPORTS_VIEW: '/client/reports/view',
     PROPOSITIONS: '/client/propositions',
     PROFILE: '/client/profile',
   },

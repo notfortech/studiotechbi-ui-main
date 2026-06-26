@@ -29,6 +29,7 @@ import { AccountantClientsPage } from '../portals/accountant/ClientsPage';
 import { AccountantReportsPage } from '../portals/accountant/ReportsPage';
 import { ClientDashboard } from '../portals/client/ClientDashboard';
 import { ClientReportsPage } from '../portals/client/ReportsPage';
+import { ReportsListPage } from '../portals/client/ReportsListPage';
 import { PropositionsPage } from '../portals/client/PropositionsPage';
 import { ProfilePage } from '../portals/client/ProfilePage';
 import { ROUTES } from './constants';
@@ -184,6 +185,10 @@ export const routes: RouteObject[] = [
       },
       {
         path: 'reports',
+        element: <ReportsListPage />,
+      },
+      {
+        path: 'reports/view',
         element: <ClientReportsPage />,
       },
       {
