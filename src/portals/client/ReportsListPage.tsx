@@ -144,7 +144,7 @@ export const ReportsListPage = () => {
   const isConfigured = (config: AvailableReportConfig) =>
     !!(config.powerBIReportId || config.powerBIDatasetId);
 
-  if (isClientPortal && !showClientDropdown && !configsLoading && configs.length === 0 && !configsError) {
+  if (isClientPortal && !showClientDropdown && !configsLoading && !user?.clientCode) {
     return (
       <Box>
         <Alert severity="warning" sx={{ mt: 2 }}>
@@ -217,7 +217,7 @@ export const ReportsListPage = () => {
           <Box display="flex" justifyContent="center" alignItems="center" minHeight={200}>
             <Stack alignItems="center" spacing={1}>
               <AssessmentIcon sx={{ fontSize: 48, color: "text.disabled" }} />
-              <Typography color="text.secondary">No reports available yet.</Typography>
+              <Typography color="text.secondary">No reports are available for your account yet.</Typography>
             </Stack>
           </Box>
         ) : (
