@@ -103,17 +103,24 @@ export const ReportsListPage = () => {
     return () => { cancelled = true; };
   }, [showClientDropdown, selectedClientCode]);
 
-  // NEW: Auto-open if there is exactly one report
+  // Auto-navigate: single config, OR API returned nothing but user has clientCode (preserves old behaviour)
   useEffect(() => {
     if (configsLoading) return;
-
-    // Don't auto-open for accountant mode
     if (showClientDropdown) return;
-  
+
     if (configs.length === 1) {
       handleOpenReport(configs[0]);
+      return;
     }
-  }, [configsLoading, configs, showClientDropdown]);
+
+    // API returned no list items but user has a clientCode — go straight to the view page
+    // so ReportsPage can load the config itself exactly as it did before this screen existed.
+    if (configs.length === 0 && user?.clientCode) {
+      navigate(ROUTES.CLIENT.REPORTS_VIEW, {
+        state: { clientCode: user.clientCode },
+      });
+    }
+  }, [configsLoading, configs, showClientDropdown, user?.clientCode]);
 
   const handleOpenReport = (config: AvailableReportConfig) => {
     if (showClientDropdown) {
