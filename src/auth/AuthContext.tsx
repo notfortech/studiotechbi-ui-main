@@ -56,6 +56,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     logout,
     isAuthenticated: !!user,
     hasAIInsights: TEMP_FORCE_AI_INSIGHTS_FOR_ALL || !!user?.hasAIInsights,
+    hasBlueprints: !!user?.hasBlueprints,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

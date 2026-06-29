@@ -40,6 +40,8 @@ function normalizeAuthPayload(response: any): {
     isAccountant: !!data.user.isAccountant || userType === 1,
     clientCode: data.user.clientCode ?? data.user.clientId ?? undefined,
     clientName: data.user.clientName ?? undefined,
+    hasAIInsights: !!data.user.hasAIInsights,
+    hasBlueprints: !!data.user.hasBlueprints,
   };
   return {
     user,
