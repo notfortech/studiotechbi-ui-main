@@ -483,7 +483,7 @@ import { ReportAreaProgressBar } from "../../components/ReportAreaProgressBar";
       <Box sx={{ mb: 2 }}>
         <Button
           startIcon={<ArrowBackIcon />}
-          onClick={() => navigate(ROUTES.CLIENT.REPORTS)}
+          onClick={() => navigate(ROUTES.CLIENT.REPORTS, { state: { fromReport: true } })}
           size="small"
           sx={{ color: "text.secondary" }}
         >
