@@ -161,8 +161,8 @@ export function BlueprintPage() {
               required
               fullWidth
               multiline
-              rows={5}
-              placeholder="e.g. I need a monthly executive dashboard showing revenue by region, top 10 customers, and cash flow trends..."
+              rows={10}
+              placeholder="e.g. An NDIS Plan Utilization and Budget Burn-Rate Report is a critical financial tool for Australian NDIS providers to track how fast participants spend their funding allocations. It automatically compares a participant's actual year-to-date spending against their ideal target budget across specific support categories, like Core and Capacity Building. By highlighting variances, the report flags under-utilization before plans expire and over-utilization early on, giving support coordinators and finance teams the real-time visibility needed to adjust service hours and protect provider revenue."
               value={requirement}
               onChange={(e) => setRequirement(e.target.value)}
               disabled={loading}
