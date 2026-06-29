@@ -17,6 +17,7 @@ import {
   Select,
   MenuItem,
   SelectChangeEvent,
+  Snackbar,
 } from "@mui/material";
 import {
   Assessment as AssessmentIcon,
@@ -39,6 +40,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { useClientView } from "../../layouts/client/ClientViewContext";
 import { canSelectReportClient } from "../../core/reportClientAccess";
 import { ROUTES } from "../../core/constants";
+import { GenerateBlueprintButton } from "./GenerateBlueprintButton";
 
 export const ReportsListPage = () => {
   const { user } = useAuth();
@@ -54,6 +56,10 @@ export const ReportsListPage = () => {
 
   const [accountantClients, setAccountantClients] = useState<AccountantClient[]>([]);
   const [accountantClientsLoading, setAccountantClientsLoading] = useState(false);
+
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: "success" | "error" | "info" }>({
+    open: false, message: "", severity: "info",
+  });
 
   // Load accountant clients for dropdown (accounting firm mode)
   useEffect(() => {
@@ -173,14 +179,21 @@ export const ReportsListPage = () => {
               Select a report to view your embedded financial data
             </Typography>
           </Box>
-          {configs.length > 0 && (
-            <Chip
-              label={`${configs.length} report${configs.length !== 1 ? "s" : ""} available`}
-              color="primary"
-              variant="outlined"
-              size="small"
+          <Stack direction="row" alignItems="center" spacing={1}>
+            {configs.length > 0 && (
+              <Chip
+                label={`${configs.length} report${configs.length !== 1 ? "s" : ""} available`}
+                color="primary"
+                variant="outlined"
+                size="small"
+              />
+            )}
+            <GenerateBlueprintButton
+              clientCode={user?.clientCode ?? selectedClientCode ?? ""}
+              onSuccess={(msg) => setSnackbar({ open: true, message: msg, severity: "info" })}
+              onError={(msg) => setSnackbar({ open: true, message: msg, severity: "error" })}
             />
-          )}
+          </Stack>
         </Stack>
 
         {showClientDropdown && (
@@ -327,6 +340,17 @@ export const ReportsListPage = () => {
           </Grid>
         )}
       </Paper>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar((s) => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert severity={snackbar.severity} onClose={() => setSnackbar((s) => ({ ...s, open: false }))}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

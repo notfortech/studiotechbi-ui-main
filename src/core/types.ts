@@ -15,6 +15,8 @@ export interface User {
   /** Client display name when user belongs to a client. */
   clientName?: string;
   hasAIInsights?: boolean;
+  /** True when the user's plan includes Blueprint Generation. Controlled from the backend/Azure user mapping. */
+  hasBlueprints?: boolean;
 }
 
 export interface AuthContextType {
@@ -26,6 +28,8 @@ export interface AuthContextType {
   isAuthenticated: boolean;
   /** Gated by API unless `TEMP_FORCE_AI_INSIGHTS_FOR_ALL` is enabled in constants. */
   hasAIInsights: boolean;
+  /** True when the user's Azure/plan mapping grants blueprint generation access. */
+  hasBlueprints: boolean;
 }
 
 export interface NavigationItem {
