@@ -3,6 +3,12 @@ export const APP_NAME = 'StudioTechBI';
 /** Set to false to gate Reports “Generate AI Insights” from API (`user.hasAIInsights`). */
 export const TEMP_FORCE_AI_INSIGHTS_FOR_ALL = true;
 
+/** Set to false to gate Blueprint Generation from API (`user.hasBlueprints`). */
+export const TEMP_FORCE_BLUEPRINTS_FOR_ALL = true;
+
+export const BLUEPRINT_MONTHLY_LIMIT = 3;
+export const BLUEPRINT_MONTHLY_CREDITS = 1_000_000;
+
 export const DRAWER_WIDTH = 260;
 export const DRAWER_WIDTH_COLLAPSED = 72;
 
@@ -48,6 +54,7 @@ export const ROUTES = {
     DASHBOARD: '/client/dashboard',
     REPORTS: '/client/reports',
     REPORTS_VIEW: '/client/reports/view',
+    BLUEPRINT: '/client/blueprint',
     PROPOSITIONS: '/client/propositions',
     PROFILE: '/client/profile',
   },
