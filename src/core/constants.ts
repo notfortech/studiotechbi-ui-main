@@ -54,6 +54,7 @@ export const ROUTES = {
     DASHBOARD: '/client/dashboard',
     REPORTS: '/client/reports',
     REPORTS_VIEW: '/client/reports/view',
+    BLUEPRINT: '/client/blueprint',
     PROPOSITIONS: '/client/propositions',
     PROFILE: '/client/profile',
   },
