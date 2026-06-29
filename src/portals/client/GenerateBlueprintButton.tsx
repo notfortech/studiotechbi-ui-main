@@ -13,6 +13,7 @@ import {
   Tooltip,
   Box,
   Typography,
+  Link,
 } from "@mui/material";
 import {
   AutoAwesome as BlueprintIcon,
@@ -20,6 +21,7 @@ import {
   DataObject as JsonIcon,
   ContentCopy as CopyIcon,
   Download as DownloadIcon,
+  OpenInNew as OpenInNewIcon,
 } from "@mui/icons-material";
 import { useEffect, useState } from "react";
 import { useAuth } from "../../auth/AuthContext";
@@ -27,9 +29,46 @@ import {
   generateBlueprint,
   downloadBlueprintJson,
   downloadBlueprintPdf,
+  getBlueprintUsageThisMonth,
+  incrementBlueprintUsage,
+  getNextResetDate,
   type GenerateBlueprintRequest,
 } from "../../services/blueprintService";
 import { useBlueprintGeneration } from "../../hooks/useBlueprintGeneration";
+import { BLUEPRINT_MONTHLY_LIMIT, BLUEPRINT_MONTHLY_CREDITS } from "../../core/constants";
+
+// ── Upgrade dialog ──────────────────────────────────────────────────────────
+
+function UpgradeDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+      <DialogTitle>Upgrade Your Plan</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          You've used all {BLUEPRINT_MONTHLY_LIMIT} free blueprint generations this month. Upgrade to
+          unlock unlimited blueprint generation and higher credit limits.
+        </Typography>
+        <Typography variant="body2">
+          Contact us to upgrade:{" "}
+          <Link href="mailto:support@studiotechbi.com" target="_blank" rel="noopener">
+            support@studiotechbi.com
+          </Link>
+        </Typography>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Close</Button>
+        <Button
+          variant="contained"
+          endIcon={<OpenInNewIcon />}
+          href="mailto:support@studiotechbi.com"
+          component="a"
+        >
+          Contact Us
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
 
 // ── Generate form dialog ────────────────────────────────────────────────────
 
@@ -73,6 +112,7 @@ function GenerateDialog({ open, clientCode, onClose, onStarted, onError }: Gener
         knowledgePack: form.knowledgePack.trim() || undefined,
       };
       const job = await generateBlueprint(req);
+      incrementBlueprintUsage(clientCode);
       handleClose();
       onStarted(job.generationId);
     } catch {
@@ -367,6 +407,54 @@ function StatusPanel({ generationId, onDismiss }: StatusPanelProps) {
   );
 }
 
+// ── Credits banner ──────────────────────────────────────────────────────────
+
+interface CreditsBannerProps {
+  used: number;
+  onUpgradeClick: () => void;
+}
+
+function CreditsBanner({ used, onUpgradeClick }: CreditsBannerProps) {
+  const remaining = Math.max(0, BLUEPRINT_MONTHLY_LIMIT - used);
+  const limitReached = remaining === 0;
+
+  const chipColor = remaining === 0 ? "error" : remaining === 1 ? "warning" : "success";
+  const creditsLabel = BLUEPRINT_MONTHLY_CREDITS >= 1_000_000
+    ? `${BLUEPRINT_MONTHLY_CREDITS / 1_000_000}M credits/mo`
+    : `${BLUEPRINT_MONTHLY_CREDITS.toLocaleString()} credits/mo`;
+
+  return (
+    <Stack spacing={0.5} alignItems="flex-end">
+      <Stack direction="row" alignItems="center" spacing={1}>
+        <Typography variant="caption" color="text.secondary">
+          {creditsLabel}
+        </Typography>
+        <Chip
+          label={`${remaining} of ${BLUEPRINT_MONTHLY_LIMIT} remaining`}
+          color={chipColor}
+          size="small"
+          variant="outlined"
+        />
+      </Stack>
+      <Stack direction="row" alignItems="center" spacing={1}>
+        <Typography variant="caption" color="text.secondary">
+          Resets {getNextResetDate()}
+        </Typography>
+        {limitReached && (
+          <Link
+            component="button"
+            variant="caption"
+            onClick={onUpgradeClick}
+            sx={{ cursor: "pointer" }}
+          >
+            Upgrade for unlimited →
+          </Link>
+        )}
+      </Stack>
+    </Stack>
+  );
+}
+
 // ── Public component ────────────────────────────────────────────────────────
 
 interface GenerateBlueprintButtonProps {
@@ -377,7 +465,7 @@ interface GenerateBlueprintButtonProps {
 }
 
 /**
- * Self-contained "Generate Blueprint" button + form dialog + status panel.
+ * Self-contained "Generate Blueprint" button + credits banner + form dialog + status panel.
  * Only renders when the logged-in user has `hasBlueprints === true` (plan gate).
  * When the flag is false the button renders as disabled with a tooltip.
  */
@@ -388,41 +476,62 @@ export const GenerateBlueprintButton = ({
 }: GenerateBlueprintButtonProps) => {
   const { hasBlueprints } = useAuth();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [activeGenerationId, setActiveGenerationId] = useState<string | undefined>(undefined);
+  const [usedThisMonth, setUsedThisMonth] = useState(() =>
+    clientCode ? getBlueprintUsageThisMonth(clientCode) : 0
+  );
+
+  const limitReached = hasBlueprints && usedThisMonth >= BLUEPRINT_MONTHLY_LIMIT;
+
+  const tooltipTitle = !hasBlueprints
+    ? "Blueprint generation is not available on your current plan. Contact support to upgrade."
+    : limitReached
+    ? `Monthly limit reached (${BLUEPRINT_MONTHLY_LIMIT}/${BLUEPRINT_MONTHLY_LIMIT} used). Resets ${getNextResetDate()} — or upgrade for unlimited access.`
+    : "";
+
+  const buttonDisabled = !hasBlueprints || limitReached;
 
   return (
     <>
-      <Tooltip
-        title={
-          hasBlueprints
-            ? ""
-            : "Blueprint generation is not available on your current plan. Contact support to upgrade."
-        }
-        disableHoverListener={hasBlueprints}
-      >
-        <span>
-          <Button
-            variant="outlined"
-            startIcon={<BlueprintIcon />}
-            onClick={() => setDialogOpen(true)}
-            disabled={!hasBlueprints}
-            size="small"
-          >
-            Generate Blueprint
-          </Button>
-        </span>
-      </Tooltip>
+      <Stack alignItems="flex-end" spacing={0.5}>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Tooltip title={tooltipTitle} disableHoverListener={!buttonDisabled}>
+            <span>
+              <Button
+                variant="outlined"
+                startIcon={<BlueprintIcon />}
+                onClick={() => setDialogOpen(true)}
+                disabled={buttonDisabled}
+                size="small"
+              >
+                Generate Blueprint
+              </Button>
+            </span>
+          </Tooltip>
+        </Stack>
+
+        {hasBlueprints && (
+          <CreditsBanner
+            used={usedThisMonth}
+            onUpgradeClick={() => setUpgradeOpen(true)}
+          />
+        )}
+      </Stack>
 
       <GenerateDialog
         open={dialogOpen}
         clientCode={clientCode}
         onClose={() => setDialogOpen(false)}
         onStarted={(genId) => {
+          setUsedThisMonth(getBlueprintUsageThisMonth(clientCode));
           setActiveGenerationId(genId);
           onSuccess?.("Blueprint generation started — we'll let you know when it's ready.");
         }}
         onError={(msg) => onError?.(msg)}
       />
+
+      <UpgradeDialog open={upgradeOpen} onClose={() => setUpgradeOpen(false)} />
 
       {activeGenerationId && (
         <StatusPanel
