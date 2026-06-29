@@ -4,6 +4,7 @@ import { apiService } from './api';
 export interface Client {
   id: string;
   name: string;
+  tenantId?: string;
   clientCode?: string;
   industry?: string;
   status?: string;
@@ -23,6 +24,7 @@ export interface ClientDetail extends Client {
 /** Backend ClientDto (JSON camelCase). */
 interface ClientDto {
   clientId?: string;
+  tenantId?: string | null;
   clientCode?: string | null;
   clientName?: string;
   industry?: string | null;
@@ -56,6 +58,7 @@ function mapClientDto(dto: ClientDto): Client {
   return {
     id,
     name,
+    tenantId: dto.tenantId ?? undefined,
     clientCode: dto.clientCode ?? undefined,
     industry: dto.industry ?? undefined,
     status: active ? 'active' : 'inactive',

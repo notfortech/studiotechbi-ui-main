@@ -31,6 +31,7 @@ export const ROUTES = {
     AUDIT_LOGS: '/admin/audit-logs',
     SYSTEM_HEALTH: '/admin/system-health',
     REPORTS: '/admin/reports',
+    BLUEPRINTS: '/admin/blueprints',
     SETTINGS: '/admin/settings',
     LOGS_FUNCTIONAL: '/admin/logs/functional',
     LOGS_TECHNICAL: '/admin/logs/technical',

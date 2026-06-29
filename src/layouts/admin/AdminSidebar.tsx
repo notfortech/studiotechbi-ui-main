@@ -17,6 +17,7 @@ import {
   People as PeopleIcon,
   Description as DescriptionIcon,
   Work as WorkIcon,
+  AutoAwesome as BlueprintIcon,
   List as ListIcon,
   ExpandLess,
   ExpandMore,
@@ -49,6 +50,7 @@ const mainItems = [
   { id: 'file-uploads', title: 'File Upload Monitoring', path: ROUTES.ADMIN.FILE_UPLOAD_MONITORING, icon: <FileUploadIcon /> },
   { id: 'dataset-refresh', title: 'Dataset Refresh Logs', path: ROUTES.ADMIN.DATASET_REFRESH_LOGS, icon: <DatasetRefreshIcon /> },
   { id: 'jobs', title: 'Processing Jobs', path: ROUTES.ADMIN.JOBS, icon: <WorkIcon /> },
+  { id: 'blueprints', title: 'Blueprints', path: ROUTES.ADMIN.BLUEPRINTS, icon: <BlueprintIcon /> },
   { id: 'audit', title: 'Audit Logs', path: ROUTES.ADMIN.AUDIT_LOGS, icon: <AuditLogIcon /> },
   { id: 'system-health', title: 'System Health', path: ROUTES.ADMIN.SYSTEM_HEALTH, icon: <SystemHealthIcon /> },
 ];
