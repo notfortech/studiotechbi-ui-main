@@ -23,7 +23,6 @@ import { useEffect, useState } from 'react';
 import { getClientById, assignUserToClient, type ClientDetail } from '../../services/clientService';
 import { getAdminUsers } from '../../services/adminUserService';
 import { ROUTES } from '../../core/constants';
-import { BlueprintsPage } from './BlueprintsPage';
 
 export const ClientDetailsPage = () => {
   const { clientId } = useParams<{ clientId: string }>();
@@ -242,16 +241,12 @@ export const ClientDetailsPage = () => {
       )}
 
       {(!client.uploads?.length && !client.validationErrors?.length && !client.processingJobs?.length) && (
-        <Paper sx={{ p: 3, mb: 3 }}>
+        <Paper sx={{ p: 3 }}>
           <Typography color="text.secondary">
             No uploads, validation errors, or processing jobs to display.
           </Typography>
         </Paper>
       )}
-
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <BlueprintsPage tenantId={client.tenantId} clientId={client.id} />
-      </Paper>
 
       <Snackbar open={snackbar.open} autoHideDuration={6000} onClose={() => setSnackbar((s) => ({ ...s, open: false }))} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
         <Alert severity={snackbar.severity} onClose={() => setSnackbar((s) => ({ ...s, open: false }))}>

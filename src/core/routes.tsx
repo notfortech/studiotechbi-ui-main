@@ -24,7 +24,6 @@ import { FunctionalLogsPage } from '../portals/admin/FunctionalLogsPage';
 import { TechnicalLogsPage } from '../portals/admin/TechnicalLogsPage';
 import { SettingsPage } from '../portals/admin/SettingsPage';
 import { AdminReportsPage } from '../portals/admin/ReportsPage';
-import { BlueprintsPage } from '../portals/admin/BlueprintsPage';
 import { AccountantDashboard } from '../portals/accountant/AccountantDashboard';
 import { AccountantClientsPage } from '../portals/accountant/ClientsPage';
 import { AccountantReportsPage } from '../portals/accountant/ReportsPage';
@@ -127,10 +126,6 @@ export const routes: RouteObject[] = [
       {
         path: 'reports',
         element: <AdminReportsPage />,
-      },
-      {
-        path: 'blueprints',
-        element: <BlueprintsPage />,
       },
       {
         path: 'settings',
