@@ -276,18 +276,28 @@ export async function getAvailableReportsConfigForClient(
 
 /**
  * Call GET /api/reports/available (no path parameter).
- * Backend returns report config(s) for the current user (JWT). For clients, typically one item.
- * Use clientCode as folder name, blobFolderPath for blob/dataset, powerBIReportId/powerBIDatasetId if needed.
+ * Backend returns a single object keyed by the user's JWT client_code claim.
+ * Returns a 1-item array when a client is linked, empty array when clientCode is null.
  */
 export async function getAvailableReportsConfig(): Promise<AvailableReportConfig[]> {
-  const data = await apiService.get<AvailableReportConfig[] | { items?: AvailableReportConfig[] }>(
-    "/reports/available"
-  );
-  if (Array.isArray(data)) {
-    return data;
-  }
-  const res = data as { items?: AvailableReportConfig[] };
-  return res.items ?? [];
+  const raw = await apiService.get<unknown>("/reports/available");
+  const dto = raw as {
+    clientCode?: string | null;
+    blobFolderPath?: string | null;
+    powerBIReportId?: string | null;
+    powerBIDatasetId?: string | null;
+    availablePeriods?: { label: string; value: string }[];
+  } | null;
+
+  if (!dto?.clientCode) return [];
+
+  return [{
+    clientCode: dto.clientCode,
+    blobFolderPath: dto.blobFolderPath ?? "",
+    powerBIReportId: dto.powerBIReportId ?? undefined,
+    powerBIDatasetId: dto.powerBIDatasetId ?? undefined,
+    periods: dto.availablePeriods?.map((p) => p.value) ?? [],
+  }];
 }
 
 const NO_REPORT_MESSAGE = "No report configured for this client";

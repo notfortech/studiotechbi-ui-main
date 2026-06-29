@@ -27,7 +27,7 @@ import {
   ErrorOutline as ErrorOutlineIcon,
 } from "@mui/icons-material";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 import {
   getAvailableReportsConfig,
@@ -46,6 +46,8 @@ export const ReportsListPage = () => {
   const { user } = useAuth();
   const { selectedClientCode, setSelectedClientCode } = useClientView();
   const navigate = useNavigate();
+  const location = useLocation();
+  const cameFromReport = !!(location.state as { fromReport?: boolean } | null)?.fromReport;
 
   const isClientPortal = user?.role === "client";
   const showClientDropdown = isClientPortal && canSelectReportClient(user);
@@ -109,24 +111,17 @@ export const ReportsListPage = () => {
     return () => { cancelled = true; };
   }, [showClientDropdown, selectedClientCode]);
 
-  // Auto-navigate: single config, OR API returned nothing but user has clientCode (preserves old behaviour)
+  // Auto-navigate to view on first load; skip when user clicked "Back to Reports"
   useEffect(() => {
     if (configsLoading) return;
     if (showClientDropdown) return;
+    if (cameFromReport) return;
 
     if (configs.length === 1) {
       handleOpenReport(configs[0]);
-      return;
     }
-
-    // API returned no list items but user has a clientCode — go straight to the view page
-    // so ReportsPage can load the config itself exactly as it did before this screen existed.
-    if (configs.length === 0 && user?.clientCode) {
-      navigate(ROUTES.CLIENT.REPORTS_VIEW, {
-        state: { clientCode: user.clientCode },
-      });
-    }
-  }, [configsLoading, configs, showClientDropdown, user?.clientCode]);
+    // configs.length === 0 → show empty state, no redirect
+  }, [configsLoading, configs, showClientDropdown, cameFromReport]);
 
   const handleOpenReport = (config: AvailableReportConfig) => {
     if (showClientDropdown) {
