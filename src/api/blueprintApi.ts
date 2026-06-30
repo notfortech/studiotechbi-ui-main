@@ -49,6 +49,7 @@ export interface BlueprintVersionDto {
   isActive: boolean;
   hasJson: boolean;
   hasPdf: boolean;
+  generatedJsonContent?: string;
 }
 
 /** Returned by GET /blueprints and GET /blueprints/{id}. */
@@ -124,6 +125,11 @@ export async function listBlueprints(
   if (Array.isArray(obj.items)) return obj.items as BlueprintDto[];
   if (Array.isArray(obj.data)) return obj.data as BlueprintDto[];
   return [];
+}
+
+export async function getBlueprintById(blueprintId: string): Promise<BlueprintDto> {
+  const res = await apiAxiosInstance.get<ApiEnvelope<BlueprintDto>>(`/blueprints/${blueprintId}`);
+  return unwrap(res.data);
 }
 
 export async function downloadBlueprintPdf(blueprintId: string): Promise<void> {
