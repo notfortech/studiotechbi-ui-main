@@ -4,19 +4,12 @@ import { AxiosError } from 'axios';
 // ── V2 Request types ────────────────────────────────────────────────────────
 
 export interface BlueprintGenerateRequest {
-  tenantId: string;
-  clientId: string;
-  projectId?: string;
   industry: string;
-  knowledgePack?: string;
   businessCapability: string;
   businessGoal: string;
   businessRequirements?: string;
-  preferredProvider?: string;
-  preferredModel?: string;
-  temperature?: number;
-  maxTokens?: number;
-  outputFormat?: string;
+  knowledgePack?: string;
+  projectId?: string;
 }
 
 // ── V2 Response types ───────────────────────────────────────────────────────

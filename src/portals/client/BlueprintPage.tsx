@@ -45,10 +45,10 @@ export function BlueprintPage() {
   const { selectedClientCode } = useClientView();
 
   const isAccountantMode = user?.role === "client" && canSelectReportClient(user);
-  const clientId = isAccountantMode
-    ? (selectedClientCode ?? "")
-    : (user?.clientCode ?? "");
+  const clientId = isAccountantMode ? (selectedClientCode ?? "") : (user?.clientCode ?? "");
   const tenantId = user?.id ?? "";
+  // clientId and tenantId are resolved from the JWT on the backend;
+  // only used here for the listBlueprints query, not sent in the generate payload.
 
   const [businessCapability, setBusinessCapability] = useState("");
   const [businessGoal, setBusinessGoal] = useState("");
@@ -96,8 +96,6 @@ export function BlueprintPage() {
     setLoading(true);
     try {
       const result = await generateBlueprint({
-        tenantId,
-        clientId,
         industry: industry.trim(),
         businessCapability: businessCapability.trim(),
         businessGoal: businessGoal.trim(),
