@@ -7,121 +7,129 @@ import {
   Stack,
   Alert,
   Collapse,
+  Chip,
+  LinearProgress,
 } from "@mui/material";
 import {
   AutoAwesome as BlueprintIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
 } from "@mui/icons-material";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   generateBlueprint,
-  getBlueprintCredits,
-  getBlueprintHistory,
-  BlueprintCreditsError,
-  type BlueprintCredits,
-  type BlueprintHistoryItem,
+  listBlueprints,
+  type BlueprintDto,
 } from "../../api/blueprintApi";
-import { BlueprintCreditsBar } from "./BlueprintCreditsBar";
-import { BlueprintPdfPopup } from "./BlueprintPdfPopup";
+import { useBlueprintGeneration } from "../../hooks/useBlueprintGeneration";
 import { BlueprintHistoryTable } from "./BlueprintHistoryTable";
 import { useAuth } from "../../auth/AuthContext";
 import { useClientView } from "../../layouts/client/ClientViewContext";
 import { canSelectReportClient } from "../../core/reportClientAccess";
+
+// ── Generation status chip ──────────────────────────────────────────────────
+
+type JobStatus = 'Pending' | 'Processing' | 'Completed' | 'Failed';
+
+const JOB_STATUS_COLOR: Record<JobStatus, 'warning' | 'info' | 'success' | 'error'> = {
+  Pending: 'warning',
+  Processing: 'info',
+  Completed: 'success',
+  Failed: 'error',
+};
+
+// ── Page ────────────────────────────────────────────────────────────────────
 
 export function BlueprintPage() {
   const { user } = useAuth();
   const { selectedClientCode } = useClientView();
 
   const isAccountantMode = user?.role === "client" && canSelectReportClient(user);
-  const clientCode = isAccountantMode ? selectedClientCode : (user?.clientCode ?? undefined);
-  const useSelectedClient = isAccountantMode && !!selectedClientCode;
+  const clientId = isAccountantMode
+    ? (selectedClientCode ?? "")
+    : (user?.clientCode ?? "");
+  const tenantId = user?.id ?? "";
 
-  const [requirement, setRequirement] = useState("");
+  const [businessCapability, setBusinessCapability] = useState("");
+  const [businessGoal, setBusinessGoal] = useState("");
+  const [businessRequirements, setBusinessRequirements] = useState("");
   const [industry, setIndustry] = useState("");
-  const [schema, setSchema] = useState("");
+  const [knowledgePack, setKnowledgePack] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+
   const [loading, setLoading] = useState(false);
-  const [credits, setCredits] = useState<BlueprintCredits | null>(null);
-  const [history, setHistory] = useState<BlueprintHistoryItem[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [creditsExhausted, setCreditsExhausted] = useState(false);
-  const [popup, setPopup] = useState<{
-    requestId: string;
-    pdfDownloadUrl: string;
-    warnings: string[];
-  } | null>(null);
+  const [blueprints, setBlueprints] = useState<BlueprintDto[]>([]);
+  const [activeGenerationId, setActiveGenerationId] = useState<string | undefined>();
+
+  const { job, isPolling, timedOut } = useBlueprintGeneration(activeGenerationId);
+
+  const loadBlueprints = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      const list = await listBlueprints(tenantId, clientId || undefined);
+      setBlueprints(list);
+    } catch {
+      // non-fatal
+    }
+  }, [tenantId, clientId]);
 
   useEffect(() => {
-    loadCreditsAndHistory();
-  }, [clientCode, useSelectedClient]);
+    loadBlueprints();
+  }, [loadBlueprints]);
 
-  async function loadCreditsAndHistory() {
-    try {
-      const [c, h] = await Promise.all([
-        getBlueprintCredits(clientCode, useSelectedClient),
-        getBlueprintHistory(clientCode, useSelectedClient),
-      ]);
-      setCredits(c);
-      setHistory(h);
-    } catch {
-      // non-fatal — credits bar simply won't render
+  // When generation completes or fails, reload the list and clear the job
+  useEffect(() => {
+    if (!job) return;
+    if (job.status === 'Completed' || job.status === 'Failed') {
+      setActiveGenerationId(undefined);
+      if (job.status === 'Completed') {
+        loadBlueprints();
+      }
     }
-  }
+  }, [job?.status]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setCreditsExhausted(false);
-
-    if (requirement.trim().length < 20) {
-      setError("Please describe your requirement in at least 20 characters.");
-      return;
-    }
 
     setLoading(true);
     try {
       const result = await generateBlueprint({
-        businessRequirement: requirement.trim(),
-        industry: industry.trim() || undefined,
-        existingSchema: schema.trim() || null,
-        clientCode,
-        useSelectedClient,
+        tenantId,
+        clientId,
+        industry: industry.trim(),
+        businessCapability: businessCapability.trim(),
+        businessGoal: businessGoal.trim(),
+        businessRequirements: businessRequirements.trim() || undefined,
+        knowledgePack: knowledgePack.trim() || undefined,
       });
 
-      setPopup({
-        requestId: result.requestId,
-        pdfDownloadUrl: result.pdfDownloadUrl,
-        warnings: result.warnings,
-      });
+      // Start polling the generation job
+      setActiveGenerationId(result.generationId);
 
-      // Refresh credits and history after generation
-      await loadCreditsAndHistory();
+      // Clear form
+      setBusinessCapability("");
+      setBusinessGoal("");
+      setBusinessRequirements("");
+      setIndustry("");
+      setKnowledgePack("");
+      setShowAdvanced(false);
     } catch (err) {
-      if (err instanceof BlueprintCreditsError) {
-        setCreditsExhausted(true);
-      } else {
-        setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
-      }
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
   }
 
-  const creditsLeft = credits?.creditsRemaining ?? null;
   const canSubmit =
-    requirement.trim().length >= 20 &&
     !loading &&
-    (creditsLeft === null || creditsLeft > 0);
+    !isPolling &&
+    businessCapability.trim().length > 0 &&
+    businessGoal.trim().length >= 20 &&
+    industry.trim().length > 0;
 
-  const resetDateLabel =
-    credits?.resetDate
-      ? new Date(credits.resetDate).toLocaleDateString("en-AU", {
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-        })
-      : null;
+  const jobStatus = job?.status as JobStatus | undefined;
 
   return (
     <Box>
@@ -133,51 +141,117 @@ export function BlueprintPage() {
               Generate Blueprint
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Describe your business requirements and we'll generate a tailored data blueprint.
+              Describe your business requirements and we'll generate a tailored data blueprint PDF.
             </Typography>
           </Box>
         </Stack>
 
-        <BlueprintCreditsBar credits={credits} />
+        {/* Generation status panel */}
+        {(activeGenerationId || timedOut) && (
+          <Box
+            sx={{
+              mb: 3,
+              p: 2,
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 1,
+            }}
+          >
+            {timedOut ? (
+              <Alert severity="warning">
+                Generation is taking longer than expected. Refresh the page to check for updates.
+              </Alert>
+            ) : (
+              <Stack spacing={1.5}>
+                <Stack direction="row" alignItems="center" spacing={1.5}>
+                  <BlueprintIcon fontSize="small" color="primary" />
+                  <Typography variant="body2" fontWeight={600}>
+                    Blueprint Generation
+                  </Typography>
+                  {jobStatus && (
+                    <Chip
+                      label={jobStatus}
+                      size="small"
+                      color={JOB_STATUS_COLOR[jobStatus]}
+                    />
+                  )}
+                  {job?.confidenceScore != null && (
+                    <Typography variant="body2" color="text.secondary">
+                      Confidence: {Math.round(job.confidenceScore * 100)}%
+                    </Typography>
+                  )}
+                </Stack>
 
-        {creditsExhausted && (
-          <Alert severity="warning" sx={{ mb: 3 }}>
-            You've used all your blueprint credits.
-            {resetDateLabel && (
-              <>
-                {" "}They reset on <strong>{resetDateLabel}</strong>.
-              </>
+                {isPolling && (
+                  <LinearProgress sx={{ borderRadius: 1 }} />
+                )}
+
+                {job?.status === 'Completed' && (
+                  <Alert severity="success" sx={{ mt: 0.5 }}>
+                    Blueprint generated successfully. The PDF is now available in the table below.
+                  </Alert>
+                )}
+
+                {job?.status === 'Failed' && (
+                  <Alert severity="error" sx={{ mt: 0.5 }}>
+                    {job.errorMessage ?? "Blueprint generation failed. Please try again."}
+                  </Alert>
+                )}
+
+                {(job?.warnings?.length ?? 0) > 0 && (
+                  <Alert severity="warning" icon={false} sx={{ mt: 0.5 }}>
+                    <Typography variant="caption" fontWeight={600} display="block">
+                      Warnings
+                    </Typography>
+                    <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
+                      {job!.warnings!.map((w, i) => (
+                        <li key={i}>
+                          <Typography variant="caption">{w}</Typography>
+                        </li>
+                      ))}
+                    </ul>
+                  </Alert>
+                )}
+              </Stack>
             )}
-            {" "}Contact <a href="mailto:support@studiotechbi.com">support@studiotechbi.com</a> to
-            upgrade your plan.
-          </Alert>
+          </Box>
         )}
 
         <Box component="form" onSubmit={handleSubmit}>
           <Stack spacing={3}>
             <TextField
-              id="requirement"
-              label="What do you need your dashboards to achieve?"
+              label="Industry"
               required
               fullWidth
-              multiline
-              rows={5}
-              placeholder="e.g. I need a monthly executive dashboard showing revenue by region, top 10 customers, and cash flow trends..."
-              value={requirement}
-              onChange={(e) => setRequirement(e.target.value)}
-              disabled={loading}
-              helperText={`${requirement.length} characters (minimum 20)`}
-              error={requirement.length > 0 && requirement.trim().length < 20}
-            />
-
-            <TextField
-              id="industry"
-              label="Industry"
-              fullWidth
-              placeholder="e.g. Property Management"
+              placeholder="e.g. NDIS / Disability Services"
               value={industry}
               onChange={(e) => setIndustry(e.target.value)}
               disabled={loading}
+            />
+
+            <TextField
+              label="Business Capability"
+              required
+              fullWidth
+              placeholder="e.g. NDIS Plan Utilization and Budget Burn-Rate Reporting"
+              value={businessCapability}
+              onChange={(e) => setBusinessCapability(e.target.value)}
+              disabled={loading}
+              helperText="The specific reporting or analytics capability this blueprint should address."
+            />
+
+            <TextField
+              label="Business Goal"
+              required
+              fullWidth
+              multiline
+              rows={10}
+              placeholder="e.g. An NDIS Plan Utilization and Budget Burn-Rate Report is a critical financial tool for Australian NDIS providers to track how fast participants spend their funding allocations. It automatically compares a participant's actual year-to-date spending against their ideal target budget across specific support categories, like Core and Capacity Building. By highlighting variances, the report flags under-utilization before plans expire and over-utilization early on, giving support coordinators and finance teams the real-time visibility needed to adjust service hours and protect provider revenue."
+              value={businessGoal}
+              onChange={(e) => setBusinessGoal(e.target.value)}
+              disabled={loading}
+              helperText={`${businessGoal.length} characters (minimum 20) — describe in detail what insights this blueprint must deliver.`}
+              error={businessGoal.length > 0 && businessGoal.trim().length < 20}
             />
 
             <Box>
@@ -189,23 +263,31 @@ export function BlueprintPage() {
                 onClick={() => setShowAdvanced((v) => !v)}
                 sx={{ color: "text.secondary", px: 0 }}
               >
-                Advanced — paste existing data schema (optional)
+                Advanced options (optional)
               </Button>
 
               <Collapse in={showAdvanced}>
-                <TextField
-                  id="schema"
-                  label="Existing Schema (JSON)"
-                  fullWidth
-                  multiline
-                  rows={6}
-                  placeholder='{ "tables": [...], "columns": [...] }'
-                  value={schema}
-                  onChange={(e) => setSchema(e.target.value)}
-                  disabled={loading}
-                  helperText="Describe column names and types only — do not include actual data values."
-                  sx={{ mt: 2 }}
-                />
+                <Stack spacing={2} sx={{ mt: 2 }}>
+                  <TextField
+                    label="Business Requirements"
+                    fullWidth
+                    multiline
+                    rows={4}
+                    placeholder="List any specific data, filters, KPIs, or constraints the report must include..."
+                    value={businessRequirements}
+                    onChange={(e) => setBusinessRequirements(e.target.value)}
+                    disabled={loading}
+                  />
+                  <TextField
+                    label="Knowledge Pack"
+                    fullWidth
+                    placeholder="e.g. NDIS pricing arrangements, SCHADS award, SIL/SDA definitions"
+                    value={knowledgePack}
+                    onChange={(e) => setKnowledgePack(e.target.value)}
+                    disabled={loading}
+                    helperText="Domain-specific terminology or context that should inform the blueprint."
+                  />
+                </Stack>
               </Collapse>
             </Box>
 
@@ -218,25 +300,16 @@ export function BlueprintPage() {
                 size="large"
                 startIcon={<BlueprintIcon />}
                 disabled={!canSubmit}
-                sx={{ minWidth: 200 }}
+                sx={{ minWidth: 220 }}
               >
-                {loading ? "Generating…" : "Generate Blueprint"}
+                {loading ? "Submitting…" : isPolling ? "Generating…" : "Generate Blueprint"}
               </Button>
             </Box>
           </Stack>
         </Box>
       </Paper>
 
-      {history.length > 0 && <BlueprintHistoryTable history={history} />}
-
-      {popup && (
-        <BlueprintPdfPopup
-          requestId={popup.requestId}
-          pdfDownloadUrl={popup.pdfDownloadUrl}
-          warnings={popup.warnings}
-          onClose={() => setPopup(null)}
-        />
-      )}
+      {blueprints.length > 0 && <BlueprintHistoryTable blueprints={blueprints} />}
     </Box>
   );
 }

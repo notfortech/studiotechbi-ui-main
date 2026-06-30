@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { getGenerationStatus, type BlueprintGenerationJobDto } from '../services/blueprintService';
+import { getGenerationStatus, type BlueprintGenerationJobDto } from '../api/blueprintApi';
 
 const POLL_INTERVAL_MS = 3000;
-const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const TIMEOUT_MS = 5 * 60 * 1000;
 
 interface UseBlueprintGenerationResult {
   job: BlueprintGenerationJobDto | null;
@@ -10,7 +10,9 @@ interface UseBlueprintGenerationResult {
   timedOut: boolean;
 }
 
-export function useBlueprintGeneration(generationId: string | undefined): UseBlueprintGenerationResult {
+export function useBlueprintGeneration(
+  generationId: string | undefined
+): UseBlueprintGenerationResult {
   const [job, setJob] = useState<BlueprintGenerationJobDto | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
@@ -28,6 +30,7 @@ export function useBlueprintGeneration(generationId: string | undefined): UseBlu
   useEffect(() => {
     if (!generationId) return;
 
+    setJob(null);
     setTimedOut(false);
     setIsPolling(true);
 
@@ -45,7 +48,6 @@ export function useBlueprintGeneration(generationId: string | undefined): UseBlu
 
     poll();
     intervalRef.current = setInterval(poll, POLL_INTERVAL_MS);
-
     timeoutRef.current = setTimeout(() => {
       stop();
       setTimedOut(true);

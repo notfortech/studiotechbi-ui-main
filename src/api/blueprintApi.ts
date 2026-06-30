@@ -1,65 +1,80 @@
 import { apiAxiosInstance } from '../services/apiClient';
 import { AxiosError } from 'axios';
 
+// ── V2 Request types ────────────────────────────────────────────────────────
+
 export interface BlueprintGenerateRequest {
-  businessRequirement: string;
-  industry?: string;
-  existingSchema?: string | null;
-  clientCode?: string;
-  useSelectedClient?: boolean;
-}
-
-export interface BlueprintGenerateResponse {
-  success: boolean;
-  requestId: string;
-  status: 'Completed' | 'PartiallyValid' | 'Failed';
-  pdfDownloadUrl: string;
-  creditsConsumed: number;
-  creditsRemaining: number;
-  subscriptionPlan: string;
-  resetDate: string | null;
-  warnings: string[];
-}
-
-export interface BlueprintCredits {
-  creditsRemaining: number | null;
-  creditsConsumed: number;
-  subscriptionPlan: string;
-  resetDate: string | null;
-}
-
-export interface BlueprintHistoryItem {
-  requestId: string;
-  status: string;
-  businessRequirement: string;
+  tenantId: string;
+  clientId: string;
+  projectId?: string;
   industry: string;
-  pdfDownloadUrl: string | null;
-  creditsConsumed: number | null;
-  creditsRemaining: number | null;
-  createdAtUtc: string;
-  completedAtUtc: string | null;
+  knowledgePack?: string;
+  businessCapability: string;
+  businessGoal: string;
+  businessRequirements?: string;
+  preferredProvider?: string;
+  preferredModel?: string;
+  temperature?: number;
+  maxTokens?: number;
+  outputFormat?: string;
 }
 
-export class BlueprintCreditsError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'BlueprintCreditsError';
-  }
+// ── V2 Response types ───────────────────────────────────────────────────────
+
+/** Returned by POST /blueprints/generate and GET /blueprints/generations/{id}. */
+export interface BlueprintGenerationJobDto {
+  generationId: string;
+  blueprintId: string;
+  status: 'Pending' | 'Processing' | 'Completed' | 'Failed';
+  confidenceScore?: number;
+  warnings?: string[];
+  errorMessage?: string;
+  createdAt: string;
+  processingStartedAt?: string;
+  completedAt?: string;
+  blueprintVersionId?: string;
 }
+
+/** Embedded in BlueprintDto.activeVersion. */
+export interface BlueprintVersionDto {
+  id: string;
+  blueprintId: string;
+  versionNumber: number;
+  promptVersion?: string;
+  confidence: number;
+  generatedDate: string;
+  executionTimeMs: number;
+  isActive: boolean;
+  hasJson: boolean;
+  hasPdf: boolean;
+}
+
+/** Returned by GET /blueprints and GET /blueprints/{id}. */
+export interface BlueprintDto {
+  id: string;
+  tenantId: string;
+  clientId: string;
+  projectId?: string;
+  industry: string;
+  knowledgePack?: string;
+  status: 'Active' | 'Archived';
+  versionCount: number;
+  createdAt: string;
+  updatedAt?: string;
+  createdBy?: string;
+  activeVersion?: BlueprintVersionDto;
+}
+
+// ── API functions ────────────────────────────────────────────────────────────
 
 export async function generateBlueprint(
-  body: BlueprintGenerateRequest
-): Promise<BlueprintGenerateResponse> {
+  req: BlueprintGenerateRequest
+): Promise<BlueprintGenerationJobDto> {
   try {
-    const res = await apiAxiosInstance.post<BlueprintGenerateResponse>('/blueprint/generate', body);
+    const res = await apiAxiosInstance.post<BlueprintGenerationJobDto>('/blueprints/generate', req);
     return res.data;
   } catch (err) {
     const axiosErr = err as AxiosError<{ message?: string }>;
-    if (axiosErr.response?.status === 402) {
-      throw new BlueprintCreditsError(
-        axiosErr.response.data?.message ?? 'Blueprint credits exhausted.'
-      );
-    }
     if (axiosErr.response?.status === 400) {
       throw new Error(axiosErr.response.data?.message ?? 'Invalid request.');
     }
@@ -70,36 +85,54 @@ export async function generateBlueprint(
   }
 }
 
-export async function downloadBlueprintPdf(requestId: string): Promise<string> {
-  try {
-    const res = await apiAxiosInstance.get<Blob>(`/blueprint/${requestId}/pdf`, {
-      responseType: 'blob',
-      headers: { Accept: 'application/pdf' },
-    });
-    return URL.createObjectURL(res.data);
-  } catch {
-    throw new Error('PDF not available yet.');
-  }
-}
-
-export async function getBlueprintCredits(
-  clientCode?: string,
-  useSelectedClient?: boolean
-): Promise<BlueprintCredits> {
-  const params = new URLSearchParams();
-  if (clientCode) params.set('clientCode', clientCode);
-  if (useSelectedClient) params.set('useSelectedClient', 'true');
-  const res = await apiAxiosInstance.get<BlueprintCredits>(`/blueprint/credits?${params}`);
+export async function getGenerationStatus(
+  generationId: string
+): Promise<BlueprintGenerationJobDto> {
+  const res = await apiAxiosInstance.get<BlueprintGenerationJobDto>(
+    `/blueprints/generations/${generationId}`
+  );
   return res.data;
 }
 
-export async function getBlueprintHistory(
-  clientCode?: string,
-  useSelectedClient?: boolean
-): Promise<BlueprintHistoryItem[]> {
-  const params = new URLSearchParams();
-  if (clientCode) params.set('clientCode', clientCode);
-  if (useSelectedClient) params.set('useSelectedClient', 'true');
-  const res = await apiAxiosInstance.get<BlueprintHistoryItem[]>(`/blueprint/requests?${params}`);
+export async function listBlueprints(
+  tenantId: string,
+  clientId?: string
+): Promise<BlueprintDto[]> {
+  const params = new URLSearchParams({ tenantId });
+  if (clientId) params.set('clientId', clientId);
+  const res = await apiAxiosInstance.get<unknown>(`/blueprints?${params}`);
+  const raw = res.data;
+  if (Array.isArray(raw)) return raw as BlueprintDto[];
+  // Handle paginated envelope shapes
+  const obj = raw as Record<string, unknown>;
+  if (Array.isArray(obj.items)) return obj.items as BlueprintDto[];
+  if (Array.isArray(obj.data)) return obj.data as BlueprintDto[];
+  return [];
+}
+
+export async function downloadBlueprintPdf(blueprintId: string): Promise<void> {
+  const res = await apiAxiosInstance.get<Blob>(`/blueprints/${blueprintId}/pdf`, {
+    responseType: 'blob',
+    headers: { Accept: 'application/pdf' },
+  });
+  const url = URL.createObjectURL(res.data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `blueprint-${blueprintId}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadBlueprintJson(blueprintId: string): Promise<string> {
+  const res = await apiAxiosInstance.get<string>(`/blueprints/${blueprintId}/json`, {
+    responseType: 'text',
+    headers: { Accept: 'application/json' },
+  });
   return res.data;
+}
+
+export async function deleteBlueprint(blueprintId: string): Promise<void> {
+  await apiAxiosInstance.delete(`/blueprints/${blueprintId}`);
 }

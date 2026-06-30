@@ -10,38 +10,60 @@ import {
   Chip,
   Typography,
   Box,
+  Stack,
 } from "@mui/material";
-import { Download as DownloadIcon } from "@mui/icons-material";
+import {
+  Download as DownloadIcon,
+  DataObject as JsonIcon,
+} from "@mui/icons-material";
 import { useState } from "react";
-import { downloadBlueprintPdf, type BlueprintHistoryItem } from "../../api/blueprintApi";
+import {
+  downloadBlueprintPdf,
+  downloadBlueprintJson,
+  type BlueprintDto,
+} from "../../api/blueprintApi";
 
 interface Props {
-  history: BlueprintHistoryItem[];
+  blueprints: BlueprintDto[];
 }
 
-type ChipColor = "success" | "warning" | "error" | "default";
+type ChipColor = "info" | "default";
 
-const STATUS_COLOR: Record<string, ChipColor> = {
-  Completed: "success",
-  PartiallyValid: "warning",
-  Failed: "error",
+const BLUEPRINT_STATUS_COLOR: Record<string, ChipColor> = {
+  Active: "info",
+  Archived: "default",
 };
 
-export function BlueprintHistoryTable({ history }: Props) {
-  const [downloading, setDownloading] = useState<string | null>(null);
+export function BlueprintHistoryTable({ blueprints }: Props) {
+  const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null);
+  const [downloadingJson, setDownloadingJson] = useState<string | null>(null);
 
-  const handleDownload = async (item: BlueprintHistoryItem) => {
-    if (!item.pdfDownloadUrl) return;
-    setDownloading(item.requestId);
+  const handlePdfDownload = async (blueprint: BlueprintDto) => {
+    setDownloadingPdf(blueprint.id);
     try {
-      const url = await downloadBlueprintPdf(item.requestId);
+      await downloadBlueprintPdf(blueprint.id);
+    } catch {
+      // user will see browser error; no crash
+    } finally {
+      setDownloadingPdf(null);
+    }
+  };
+
+  const handleJsonDownload = async (blueprint: BlueprintDto) => {
+    setDownloadingJson(blueprint.id);
+    try {
+      const json = await downloadBlueprintJson(blueprint.id);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `blueprint-${item.requestId}.pdf`;
+      a.download = `blueprint-${blueprint.id}.json`;
       a.click();
       URL.revokeObjectURL(url);
+    } catch {
+      // non-fatal
     } finally {
-      setDownloading(null);
+      setDownloadingJson(null);
     }
   };
 
@@ -55,51 +77,60 @@ export function BlueprintHistoryTable({ history }: Props) {
           <TableHead>
             <TableRow>
               <TableCell>Date</TableCell>
-              <TableCell>Requirement</TableCell>
+              <TableCell>Industry</TableCell>
               <TableCell>Status</TableCell>
-              <TableCell align="center">Credits used</TableCell>
+              <TableCell align="center">Versions</TableCell>
               <TableCell />
             </TableRow>
           </TableHead>
           <TableBody>
-            {history.map((item) => (
-              <TableRow key={item.requestId} hover>
+            {blueprints.map((bp) => (
+              <TableRow key={bp.id} hover>
                 <TableCell sx={{ whiteSpace: "nowrap" }}>
-                  {new Date(item.createdAtUtc).toLocaleDateString("en-AU")}
+                  {new Date(bp.createdAt).toLocaleDateString("en-AU")}
                 </TableCell>
-                <TableCell
-                  sx={{ maxWidth: 360 }}
-                  title={item.businessRequirement}
-                >
-                  <Typography variant="body2" noWrap>
-                    {item.businessRequirement.length > 80
-                      ? item.businessRequirement.slice(0, 80) + "…"
-                      : item.businessRequirement}
-                  </Typography>
+                <TableCell>
+                  <Typography variant="body2">{bp.industry || "—"}</Typography>
                 </TableCell>
                 <TableCell>
                   <Chip
-                    label={item.status}
+                    label={bp.status}
                     size="small"
-                    color={STATUS_COLOR[item.status] ?? "default"}
+                    color={BLUEPRINT_STATUS_COLOR[bp.status] ?? "default"}
                   />
                 </TableCell>
                 <TableCell align="center">
-                  <Typography variant="body2">
-                    {item.creditsConsumed ?? "—"}
-                  </Typography>
+                  <Typography variant="body2">{bp.versionCount}</Typography>
                 </TableCell>
                 <TableCell align="right">
-                  {item.pdfDownloadUrl && (
-                    <Button
-                      size="small"
-                      startIcon={<DownloadIcon />}
-                      disabled={downloading === item.requestId}
-                      onClick={() => handleDownload(item)}
-                    >
-                      {downloading === item.requestId ? "Downloading…" : "Download PDF"}
-                    </Button>
-                  )}
+                  <Stack direction="row" spacing={1} justifyContent="flex-end">
+                    {bp.activeVersion?.hasJson && (
+                      <Button
+                        size="small"
+                        startIcon={<JsonIcon />}
+                        disabled={downloadingJson === bp.id}
+                        onClick={() => handleJsonDownload(bp)}
+                      >
+                        {downloadingJson === bp.id ? "…" : "JSON"}
+                      </Button>
+                    )}
+                    {bp.activeVersion?.hasPdf && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<DownloadIcon />}
+                        disabled={downloadingPdf === bp.id}
+                        onClick={() => handlePdfDownload(bp)}
+                      >
+                        {downloadingPdf === bp.id ? "Downloading…" : "PDF"}
+                      </Button>
+                    )}
+                    {!bp.activeVersion?.hasPdf && !bp.activeVersion?.hasJson && (
+                      <Typography variant="caption" color="text.disabled">
+                        {bp.versionCount === 0 ? "Processing…" : "No output"}
+                      </Typography>
+                    )}
+                  </Stack>
                 </TableCell>
               </TableRow>
             ))}

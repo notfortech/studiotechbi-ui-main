@@ -6,9 +6,6 @@ export const TEMP_FORCE_AI_INSIGHTS_FOR_ALL = true;
 /** Set to false to gate Blueprint Generation from API (`user.hasBlueprints`). */
 export const TEMP_FORCE_BLUEPRINTS_FOR_ALL = true;
 
-export const BLUEPRINT_MONTHLY_LIMIT = 3;
-export const BLUEPRINT_MONTHLY_CREDITS = 1_000_000;
-
 export const DRAWER_WIDTH = 260;
 export const DRAWER_WIDTH_COLLAPSED = 72;
 
