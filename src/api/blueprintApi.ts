@@ -1,6 +1,8 @@
 import { apiAxiosInstance } from '../services/apiClient';
 import { AxiosError } from 'axios';
 
+// ── Request / Response types matching Blueprint V2 API ─────────────────────
+
 export interface BlueprintGenerateRequest {
   businessRequirement: string;
   industry?: string;
@@ -9,18 +11,14 @@ export interface BlueprintGenerateRequest {
   useSelectedClient?: boolean;
 }
 
+/** POST /blueprint/generate — generation is async; PDF is NOT immediately available. */
 export interface BlueprintGenerateResponse {
-  success: boolean;
   requestId: string;
-  status: 'Completed' | 'PartiallyValid' | 'Failed';
-  pdfDownloadUrl: string;
-  creditsConsumed: number;
-  creditsRemaining: number;
-  subscriptionPlan: string;
-  resetDate: string | null;
+  status: string;
   warnings: string[];
 }
 
+/** GET /blueprint/credits — may return 404 if plan has no credit gate; callers must handle. */
 export interface BlueprintCredits {
   creditsRemaining: number | null;
   creditsConsumed: number;
@@ -28,17 +26,18 @@ export interface BlueprintCredits {
   resetDate: string | null;
 }
 
+/** GET /blueprint/requests — V2 shape; businessRequirement / credits fields removed. */
 export interface BlueprintHistoryItem {
   requestId: string;
   status: string;
-  businessRequirement: string;
   industry: string;
   pdfDownloadUrl: string | null;
-  creditsConsumed: number | null;
-  creditsRemaining: number | null;
   createdAtUtc: string;
-  completedAtUtc: string | null;
+  updatedAtUtc: string | null;
+  versionCount: number;
 }
+
+// ── Error types ─────────────────────────────────────────────────────────────
 
 export class BlueprintCreditsError extends Error {
   constructor(message: string) {
@@ -46,6 +45,8 @@ export class BlueprintCreditsError extends Error {
     this.name = 'BlueprintCreditsError';
   }
 }
+
+// ── API functions ────────────────────────────────────────────────────────────
 
 export async function generateBlueprint(
   body: BlueprintGenerateRequest

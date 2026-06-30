@@ -19,9 +19,10 @@ interface Props {
   history: BlueprintHistoryItem[];
 }
 
-type ChipColor = "success" | "warning" | "error" | "default";
+type ChipColor = "success" | "warning" | "error" | "info" | "default";
 
 const STATUS_COLOR: Record<string, ChipColor> = {
+  Active: "info",
   Completed: "success",
   PartiallyValid: "warning",
   Failed: "error",
@@ -55,9 +56,9 @@ export function BlueprintHistoryTable({ history }: Props) {
           <TableHead>
             <TableRow>
               <TableCell>Date</TableCell>
-              <TableCell>Requirement</TableCell>
+              <TableCell>Industry</TableCell>
               <TableCell>Status</TableCell>
-              <TableCell align="center">Credits used</TableCell>
+              <TableCell align="center">Versions</TableCell>
               <TableCell />
             </TableRow>
           </TableHead>
@@ -67,14 +68,9 @@ export function BlueprintHistoryTable({ history }: Props) {
                 <TableCell sx={{ whiteSpace: "nowrap" }}>
                   {new Date(item.createdAtUtc).toLocaleDateString("en-AU")}
                 </TableCell>
-                <TableCell
-                  sx={{ maxWidth: 360 }}
-                  title={item.businessRequirement}
-                >
-                  <Typography variant="body2" noWrap>
-                    {item.businessRequirement.length > 80
-                      ? item.businessRequirement.slice(0, 80) + "…"
-                      : item.businessRequirement}
+                <TableCell>
+                  <Typography variant="body2">
+                    {item.industry || "—"}
                   </Typography>
                 </TableCell>
                 <TableCell>
@@ -85,12 +81,10 @@ export function BlueprintHistoryTable({ history }: Props) {
                   />
                 </TableCell>
                 <TableCell align="center">
-                  <Typography variant="body2">
-                    {item.creditsConsumed ?? "—"}
-                  </Typography>
+                  <Typography variant="body2">{item.versionCount}</Typography>
                 </TableCell>
                 <TableCell align="right">
-                  {item.pdfDownloadUrl && (
+                  {item.pdfDownloadUrl ? (
                     <Button
                       size="small"
                       startIcon={<DownloadIcon />}
@@ -99,6 +93,10 @@ export function BlueprintHistoryTable({ history }: Props) {
                     >
                       {downloading === item.requestId ? "Downloading…" : "Download PDF"}
                     </Button>
+                  ) : (
+                    <Typography variant="caption" color="text.disabled">
+                      {item.versionCount === 0 ? "Processing…" : "No PDF"}
+                    </Typography>
                   )}
                 </TableCell>
               </TableRow>

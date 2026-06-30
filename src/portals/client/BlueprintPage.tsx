@@ -12,6 +12,7 @@ import {
   AutoAwesome as BlueprintIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
+  CheckCircle as CheckCircleIcon,
 } from "@mui/icons-material";
 import { useState, useEffect } from "react";
 import {
@@ -23,7 +24,6 @@ import {
   type BlueprintHistoryItem,
 } from "../../api/blueprintApi";
 import { BlueprintCreditsBar } from "./BlueprintCreditsBar";
-import { BlueprintPdfPopup } from "./BlueprintPdfPopup";
 import { BlueprintHistoryTable } from "./BlueprintHistoryTable";
 import { useAuth } from "../../auth/AuthContext";
 import { useClientView } from "../../layouts/client/ClientViewContext";
@@ -46,11 +46,7 @@ export function BlueprintPage() {
   const [history, setHistory] = useState<BlueprintHistoryItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [creditsExhausted, setCreditsExhausted] = useState(false);
-  const [popup, setPopup] = useState<{
-    requestId: string;
-    pdfDownloadUrl: string;
-    warnings: string[];
-  } | null>(null);
+  const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
     loadCreditsAndHistory();
@@ -58,14 +54,17 @@ export function BlueprintPage() {
 
   async function loadCreditsAndHistory() {
     try {
-      const [c, h] = await Promise.all([
-        getBlueprintCredits(clientCode, useSelectedClient),
-        getBlueprintHistory(clientCode, useSelectedClient),
-      ]);
-      setCredits(c);
+      // Credits endpoint is optional in V2 — failure just hides the bar
+      const creditsResult = await getBlueprintCredits(clientCode, useSelectedClient).catch(() => null);
+      setCredits(creditsResult);
+    } catch {
+      // non-fatal
+    }
+    try {
+      const h = await getBlueprintHistory(clientCode, useSelectedClient);
       setHistory(h);
     } catch {
-      // non-fatal — credits bar simply won't render
+      // non-fatal — history table simply won't render
     }
   }
 
@@ -73,6 +72,7 @@ export function BlueprintPage() {
     e.preventDefault();
     setError(null);
     setCreditsExhausted(false);
+    setSubmitted(false);
 
     if (requirement.trim().length < 20) {
       setError("Please describe your requirement in at least 20 characters.");
@@ -81,7 +81,7 @@ export function BlueprintPage() {
 
     setLoading(true);
     try {
-      const result = await generateBlueprint({
+      await generateBlueprint({
         businessRequirement: requirement.trim(),
         industry: industry.trim() || undefined,
         existingSchema: schema.trim() || null,
@@ -89,13 +89,12 @@ export function BlueprintPage() {
         useSelectedClient,
       });
 
-      setPopup({
-        requestId: result.requestId,
-        pdfDownloadUrl: result.pdfDownloadUrl,
-        warnings: result.warnings,
-      });
-
-      // Refresh credits and history after generation
+      // V2: generation is async — PDF is not immediately available.
+      // Show confirmation and refresh history to display the new entry.
+      setSubmitted(true);
+      setRequirement("");
+      setIndustry("");
+      setSchema("");
       await loadCreditsAndHistory();
     } catch (err) {
       if (err instanceof BlueprintCreditsError) {
@@ -108,11 +107,7 @@ export function BlueprintPage() {
     }
   }
 
-  const creditsLeft = credits?.creditsRemaining ?? null;
-  const canSubmit =
-    requirement.trim().length >= 20 &&
-    !loading &&
-    (creditsLeft === null || creditsLeft > 0);
+  const canSubmit = requirement.trim().length >= 20 && !loading;
 
   const resetDateLabel =
     credits?.resetDate
@@ -144,12 +139,23 @@ export function BlueprintPage() {
           <Alert severity="warning" sx={{ mb: 3 }}>
             You've used all your blueprint credits.
             {resetDateLabel && (
-              <>
-                {" "}They reset on <strong>{resetDateLabel}</strong>.
-              </>
+              <> They reset on <strong>{resetDateLabel}</strong>.</>
             )}
-            {" "}Contact <a href="mailto:support@studiotechbi.com">support@studiotechbi.com</a> to
-            upgrade your plan.
+            {" "}Contact{" "}
+            <a href="mailto:support@studiotechbi.com">support@studiotechbi.com</a> to upgrade your
+            plan.
+          </Alert>
+        )}
+
+        {submitted && (
+          <Alert
+            severity="success"
+            icon={<CheckCircleIcon />}
+            sx={{ mb: 3 }}
+            onClose={() => setSubmitted(false)}
+          >
+            Blueprint generation started! Your PDF will appear in the table below when processing
+            completes.
           </Alert>
         )}
 
@@ -228,15 +234,6 @@ export function BlueprintPage() {
       </Paper>
 
       {history.length > 0 && <BlueprintHistoryTable history={history} />}
-
-      {popup && (
-        <BlueprintPdfPopup
-          requestId={popup.requestId}
-          pdfDownloadUrl={popup.pdfDownloadUrl}
-          warnings={popup.warnings}
-          onClose={() => setPopup(null)}
-        />
-      )}
     </Box>
   );
 }
