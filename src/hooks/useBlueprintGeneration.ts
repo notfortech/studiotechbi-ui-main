@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getGenerationStatus, type BlueprintGenerationJobDto } from '../api/blueprintApi';
 
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 5000;
 const TIMEOUT_MS = 5 * 60 * 1000;
 
 interface UseBlueprintGenerationResult {

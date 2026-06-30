@@ -10,6 +10,15 @@ export interface BlueprintGenerateRequest {
   businessRequirements?: string;
   knowledgePack?: string;
   projectId?: string;
+  /** Override the JWT-bound client (admin / accountant use only). */
+  clientCode?: string;
+  sourceSystems?: string[];
+  datasetMetadata?: string;
+  preferredProvider?: string;
+  preferredModel?: string;
+  temperature?: number;
+  maxTokens?: number;
+  outputFormat?: string;
 }
 
 // ── V2 Response types ───────────────────────────────────────────────────────
@@ -40,6 +49,7 @@ export interface BlueprintVersionDto {
   isActive: boolean;
   hasJson: boolean;
   hasPdf: boolean;
+  generatedJsonContent?: string;
 }
 
 /** Returned by GET /blueprints and GET /blueprints/{id}. */
@@ -60,31 +70,45 @@ export interface BlueprintDto {
 
 // ── API functions ────────────────────────────────────────────────────────────
 
+type ApiEnvelope<T> = { data: T } | T;
+
+function unwrap<T>(raw: ApiEnvelope<T>): T {
+  if (raw && typeof raw === 'object' && 'data' in (raw as object)) {
+    return (raw as { data: T }).data;
+  }
+  return raw as T;
+}
+
 export async function generateBlueprint(
   req: BlueprintGenerateRequest
 ): Promise<BlueprintGenerationJobDto> {
   try {
-    const res = await apiAxiosInstance.post<BlueprintGenerationJobDto>('/blueprints/generate', req);
-    return res.data;
+    const res = await apiAxiosInstance.post<ApiEnvelope<BlueprintGenerationJobDto>>(
+      '/blueprints/generate',
+      req
+    );
+    return unwrap(res.data);
   } catch (err) {
-    const axiosErr = err as AxiosError<{ message?: string }>;
+    const axiosErr = err as AxiosError<{ message?: string; data?: { message?: string } }>;
     if (axiosErr.response?.status === 400) {
-      throw new Error(axiosErr.response.data?.message ?? 'Invalid request.');
+      const body = axiosErr.response.data;
+      throw new Error(body?.message ?? (body?.data as { message?: string })?.message ?? 'Invalid request.');
     }
     if (axiosErr.response?.status === 502 || axiosErr.response?.status === 503) {
       throw new Error('Service temporarily unavailable, try again shortly.');
     }
-    throw new Error(axiosErr.response?.data?.message ?? 'Blueprint generation failed.');
+    const body = axiosErr.response?.data;
+    throw new Error(body?.message ?? (body?.data as { message?: string })?.message ?? 'Blueprint generation failed.');
   }
 }
 
 export async function getGenerationStatus(
   generationId: string
 ): Promise<BlueprintGenerationJobDto> {
-  const res = await apiAxiosInstance.get<BlueprintGenerationJobDto>(
+  const res = await apiAxiosInstance.get<ApiEnvelope<BlueprintGenerationJobDto>>(
     `/blueprints/generations/${generationId}`
   );
-  return res.data;
+  return unwrap(res.data);
 }
 
 export async function listBlueprints(
@@ -101,6 +125,11 @@ export async function listBlueprints(
   if (Array.isArray(obj.items)) return obj.items as BlueprintDto[];
   if (Array.isArray(obj.data)) return obj.data as BlueprintDto[];
   return [];
+}
+
+export async function getBlueprintById(blueprintId: string): Promise<BlueprintDto> {
+  const res = await apiAxiosInstance.get<ApiEnvelope<BlueprintDto>>(`/blueprints/${blueprintId}`);
+  return unwrap(res.data);
 }
 
 export async function downloadBlueprintPdf(blueprintId: string): Promise<void> {

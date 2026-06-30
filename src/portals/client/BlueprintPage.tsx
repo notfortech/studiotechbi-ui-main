@@ -7,18 +7,25 @@ import {
   Stack,
   Alert,
   Collapse,
-  Chip,
   LinearProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from "@mui/material";
 import {
   AutoAwesome as BlueprintIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
+  Download as DownloadIcon,
 } from "@mui/icons-material";
 import { useState, useEffect, useCallback } from "react";
 import {
   generateBlueprint,
   listBlueprints,
+  getBlueprintById,
+  downloadBlueprintPdf,
   type BlueprintDto,
 } from "../../api/blueprintApi";
 import { useBlueprintGeneration } from "../../hooks/useBlueprintGeneration";
@@ -26,17 +33,6 @@ import { BlueprintHistoryTable } from "./BlueprintHistoryTable";
 import { useAuth } from "../../auth/AuthContext";
 import { useClientView } from "../../layouts/client/ClientViewContext";
 import { canSelectReportClient } from "../../core/reportClientAccess";
-
-// ── Generation status chip ──────────────────────────────────────────────────
-
-type JobStatus = 'Pending' | 'Processing' | 'Completed' | 'Failed';
-
-const JOB_STATUS_COLOR: Record<JobStatus, 'warning' | 'info' | 'success' | 'error'> = {
-  Pending: 'warning',
-  Processing: 'info',
-  Completed: 'success',
-  Failed: 'error',
-};
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
@@ -61,6 +57,9 @@ export function BlueprintPage() {
   const [error, setError] = useState<string | null>(null);
   const [blueprints, setBlueprints] = useState<BlueprintDto[]>([]);
   const [activeGenerationId, setActiveGenerationId] = useState<string | undefined>();
+  const [completedBlueprint, setCompletedBlueprint] = useState<BlueprintDto | null>(null);
+  const [downloadPopupOpen, setDownloadPopupOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const { job, isPolling, timedOut } = useBlueprintGeneration(activeGenerationId);
 
@@ -78,21 +77,28 @@ export function BlueprintPage() {
     loadBlueprints();
   }, [loadBlueprints]);
 
-  // When generation completes or fails, reload the list and clear the job
+  // When generation completes: fetch blueprint detail, open popup, reload list
   useEffect(() => {
     if (!job) return;
-    if (job.status === 'Completed' || job.status === 'Failed') {
+    if (job.status === "Completed") {
       setActiveGenerationId(undefined);
-      if (job.status === 'Completed') {
-        loadBlueprints();
-      }
+      getBlueprintById(job.blueprintId)
+        .then((bp) => {
+          setCompletedBlueprint(bp);
+          setDownloadPopupOpen(true);
+          loadBlueprints();
+        })
+        .catch(() => {
+          loadBlueprints();
+        });
+    } else if (job.status === "Failed") {
+      setActiveGenerationId(undefined);
     }
   }, [job?.status]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-
     setLoading(true);
     try {
       const result = await generateBlueprint({
@@ -103,10 +109,8 @@ export function BlueprintPage() {
         knowledgePack: knowledgePack.trim() || undefined,
       });
 
-      // Start polling the generation job
       setActiveGenerationId(result.generationId);
 
-      // Clear form
       setBusinessCapability("");
       setBusinessGoal("");
       setBusinessRequirements("");
@@ -120,6 +124,25 @@ export function BlueprintPage() {
     }
   }
 
+  async function handleDownloadPdf() {
+    if (!completedBlueprint) return;
+    setDownloading(true);
+    try {
+      await downloadBlueprintPdf(completedBlueprint.id);
+    } catch {
+      // browser surfaces download errors; don't crash the popup
+    } finally {
+      setDownloading(false);
+      setDownloadPopupOpen(false);
+      setCompletedBlueprint(null);
+    }
+  }
+
+  function handleDismissPopup() {
+    setDownloadPopupOpen(false);
+    setCompletedBlueprint(null);
+  }
+
   const canSubmit =
     !loading &&
     !isPolling &&
@@ -127,7 +150,10 @@ export function BlueprintPage() {
     businessGoal.trim().length >= 20 &&
     industry.trim().length > 0;
 
-  const jobStatus = job?.status as JobStatus | undefined;
+  const statusLabel =
+    job?.status === "Pending" ? "Pending…" :
+    job?.status === "Processing" ? "Processing…" :
+    "Generating…";
 
   return (
     <Box>
@@ -144,75 +170,29 @@ export function BlueprintPage() {
           </Box>
         </Stack>
 
-        {/* Generation status panel */}
-        {(activeGenerationId || timedOut) && (
-          <Box
-            sx={{
-              mb: 3,
-              p: 2,
-              border: "1px solid",
-              borderColor: "divider",
-              borderRadius: 1,
-            }}
-          >
+        {/* Generation progress bar */}
+        {(isPolling || timedOut) && (
+          <Box sx={{ mb: 3 }}>
             {timedOut ? (
               <Alert severity="warning">
                 Generation is taking longer than expected. Refresh the page to check for updates.
               </Alert>
             ) : (
-              <Stack spacing={1.5}>
-                <Stack direction="row" alignItems="center" spacing={1.5}>
-                  <BlueprintIcon fontSize="small" color="primary" />
-                  <Typography variant="body2" fontWeight={600}>
-                    Blueprint Generation
-                  </Typography>
-                  {jobStatus && (
-                    <Chip
-                      label={jobStatus}
-                      size="small"
-                      color={JOB_STATUS_COLOR[jobStatus]}
-                    />
-                  )}
-                  {job?.confidenceScore != null && (
-                    <Typography variant="body2" color="text.secondary">
-                      Confidence: {Math.round(job.confidenceScore * 100)}%
-                    </Typography>
-                  )}
-                </Stack>
-
-                {isPolling && (
-                  <LinearProgress sx={{ borderRadius: 1 }} />
-                )}
-
-                {job?.status === 'Completed' && (
-                  <Alert severity="success" sx={{ mt: 0.5 }}>
-                    Blueprint generated successfully. The PDF is now available in the table below.
-                  </Alert>
-                )}
-
-                {job?.status === 'Failed' && (
-                  <Alert severity="error" sx={{ mt: 0.5 }}>
-                    {job.errorMessage ?? "Blueprint generation failed. Please try again."}
-                  </Alert>
-                )}
-
-                {(job?.warnings?.length ?? 0) > 0 && (
-                  <Alert severity="warning" icon={false} sx={{ mt: 0.5 }}>
-                    <Typography variant="caption" fontWeight={600} display="block">
-                      Warnings
-                    </Typography>
-                    <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
-                      {job!.warnings!.map((w, i) => (
-                        <li key={i}>
-                          <Typography variant="caption">{w}</Typography>
-                        </li>
-                      ))}
-                    </ul>
-                  </Alert>
-                )}
+              <Stack spacing={0.75}>
+                <Typography variant="body2" color="text.secondary">
+                  {statusLabel}
+                </Typography>
+                <LinearProgress sx={{ borderRadius: 1 }} />
               </Stack>
             )}
           </Box>
+        )}
+
+        {/* Generation failed */}
+        {job?.status === "Failed" && !isPolling && (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            {job.errorMessage ?? "Blueprint generation failed. Please try again."}
+          </Alert>
         )}
 
         <Box component="form" onSubmit={handleSubmit}>
@@ -308,6 +288,30 @@ export function BlueprintPage() {
       </Paper>
 
       {blueprints.length > 0 && <BlueprintHistoryTable blueprints={blueprints} />}
+
+      {/* Blueprint ready — download popup */}
+      <Dialog open={downloadPopupOpen} onClose={handleDismissPopup} maxWidth="xs" fullWidth>
+        <DialogTitle>Blueprint Ready</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Your blueprint has been generated successfully. Download the PDF now or find it in
+            the table below.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDismissPopup} color="inherit">
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<DownloadIcon />}
+            onClick={handleDownloadPdf}
+            disabled={downloading || !completedBlueprint?.activeVersion?.hasPdf}
+          >
+            {downloading ? "Downloading…" : "Download PDF"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
