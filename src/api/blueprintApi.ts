@@ -117,13 +117,15 @@ export async function listBlueprints(
 ): Promise<BlueprintDto[]> {
   const params = new URLSearchParams({ tenantId });
   if (clientId) params.set('clientId', clientId);
-  const res = await apiAxiosInstance.get<unknown>(`/blueprints?${params}`);
-  const raw = res.data;
-  if (Array.isArray(raw)) return raw as BlueprintDto[];
-  // Handle paginated envelope shapes
-  const obj = raw as Record<string, unknown>;
-  if (Array.isArray(obj.items)) return obj.items as BlueprintDto[];
-  if (Array.isArray(obj.data)) return obj.data as BlueprintDto[];
+  const res = await apiAxiosInstance.get<ApiEnvelope<{ items: BlueprintDto[] }>>(
+    `/blueprints?${params}`
+  );
+  // Backend returns ApiResponse<PaginatedResult<T>>:
+  // { "success": true, "data": { "items": [...], "pageNumber": 1, ... } }
+  // unwrap() extracts the "data" object; then read .items from the PaginatedResult.
+  const paged = unwrap(res.data) as { items?: BlueprintDto[] } | BlueprintDto[];
+  if (Array.isArray(paged)) return paged;
+  if (paged && Array.isArray(paged.items)) return paged.items;
   return [];
 }
 
