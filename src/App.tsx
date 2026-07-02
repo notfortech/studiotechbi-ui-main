@@ -21,24 +21,22 @@ const queryClient = new QueryClient({
 const theme = createTheme({
   palette: {
     primary: {
-      // Royal purple
-      main: '#6D28D9',
-      dark: '#5B21B6',
-      light: '#8B5CF6',
+      main:  '#D4845A', // warm terracotta-peach
+      dark:  '#A85A2A', // deep burnt sienna — navbars, dark surfaces
+      light: '#E8A878', // soft peach highlight
     },
     secondary: {
-      // Warm yellow / amber
-      main: '#F59E0B',
-      dark: '#D97706',
-      light: '#FBBF24',
+      main:  '#2C1A0E', // deep warm charcoal-brown
+      dark:  '#1A0F06', // near-black with warm undertone
+      light: '#5C3D22', // mid warm brown
     },
     background: {
-      default: '#f5f7fa',
+      default: '#FBF4ED', // warm cream
+      paper:   '#FFFFFF',
     },
     text: {
-      // Softer than pure black for a modern feel.
-      primary: '#111827', // slate-900
-      secondary: '#475569', // slate-600
+      primary:   '#1A0F06', // near-black, warm
+      secondary: '#6B4E35', // warm medium brown
     },
   },
   components: {
