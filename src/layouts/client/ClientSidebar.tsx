@@ -16,6 +16,7 @@ import {
   Description as DescriptionIcon,
   AccountCircle as ProfileIcon,
   AutoAwesome as BlueprintIcon,
+  Palette as DesignerIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { DRAWER_WIDTH, ROUTES } from '../../core/constants';
@@ -29,6 +30,7 @@ const navigationItems: NavigationItem[] = [
   { id: 'dashboard', title: 'Dashboard', path: ROUTES.CLIENT.DASHBOARD, icon: <DashboardIcon /> },
   { id: 'reports', title: 'Reports', path: ROUTES.CLIENT.REPORTS, icon: <AssessmentIcon /> },
   { id: 'blueprint', title: 'Generate Blueprint', path: ROUTES.CLIENT.BLUEPRINT, icon: <BlueprintIcon /> },
+  { id: 'report-designer', title: 'Report Designer', path: ROUTES.CLIENT.REPORT_DESIGNER, icon: <DesignerIcon /> },
   { id: 'propositions', title: 'Propositions', path: ROUTES.CLIENT.PROPOSITIONS, icon: <DescriptionIcon /> },
   { id: 'profile', title: 'Profile', path: ROUTES.CLIENT.PROFILE, icon: <ProfileIcon /> },
 ];
