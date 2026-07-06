@@ -31,6 +31,7 @@ import { ClientDashboard } from '../portals/client/ClientDashboard';
 import { ClientReportsPage } from '../portals/client/ReportsPage';
 import { ReportsListPage } from '../portals/client/ReportsListPage';
 import { BlueprintPage } from '../portals/client/BlueprintPage';
+import { ReportDesignerPage } from '../portals/client/ReportDesignerPage';
 import { PropositionsPage } from '../portals/client/PropositionsPage';
 import { ProfilePage } from '../portals/client/ProfilePage';
 import { ROUTES } from './constants';
@@ -195,6 +196,10 @@ export const routes: RouteObject[] = [
       {
         path: 'blueprint',
         element: <BlueprintPage />,
+      },
+      {
+        path: 'report-designer',
+        element: <ReportDesignerPage />,
       },
       {
         path: 'propositions',
