@@ -21,23 +21,28 @@ const queryClient = new QueryClient({
 const theme = createTheme({
   palette: {
     primary: {
-      main:  '#D4845A', // warm terracotta-peach
-      dark:  '#A85A2A', // deep burnt sienna — navbars, dark surfaces
-      light: '#E8A878', // soft peach highlight
+      main:  '#4F46E5', // vibrant indigo
+      dark:  '#3730A3', // deep indigo — navbars, dark surfaces
+      light: '#818CF8', // soft indigo highlight
     },
     secondary: {
-      main:  '#2C1A0E', // deep warm charcoal-brown
-      dark:  '#1A0F06', // near-black with warm undertone
-      light: '#5C3D22', // mid warm brown
+      main:  '#0D9488', // vivid teal
+      dark:  '#115E59', // deep teal
+      light: '#5EEAD4', // bright teal highlight
     },
     background: {
-      default: '#FBF4ED', // warm cream
+      default: '#F8FAFC', // cool slate-white
       paper:   '#FFFFFF',
     },
     text: {
-      primary:   '#1A0F06', // near-black, warm
-      secondary: '#6B4E35', // warm medium brown
+      primary:   '#0F172A', // near-black slate
+      secondary: '#475569', // slate grey
     },
+    divider: '#E2E8F0',
+    success: { main: '#16A34A' },
+    warning: { main: '#F59E0B' },
+    error:   { main: '#DC2626' },
+    info:    { main: '#0EA5E9' },
   },
   components: {
     MuiButton: {
@@ -46,6 +51,20 @@ const theme = createTheme({
           textTransform: 'none',
           fontWeight: 600,
           borderRadius: 10,
+        },
+      },
+    },
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          backgroundImage: 'none',
+        },
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: {
+          fontWeight: 600,
         },
       },
     },
