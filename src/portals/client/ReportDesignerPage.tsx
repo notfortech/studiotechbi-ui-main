@@ -129,17 +129,17 @@ function SchemaNode({ x, y, name, columns, isFact }: {
 }) {
   const shown = columns.slice(0, MAX_COLS);
   const h = nodeHeight(columns.length);
-  const fill = isFact ? "#D4845A" : "#A85A2A";
+  const fill = isFact ? "#4F46E5" : "#3730A3";
 
   return (
     <g>
-      <rect x={x} y={y} width={NODE_W} height={h} rx={5} fill="white" stroke="#e0c5b0" strokeWidth={1} />
+      <rect x={x} y={y} width={NODE_W} height={h} rx={5} fill="white" stroke="#c7d2fe" strokeWidth={1} />
       <rect x={x} y={y} width={NODE_W} height={HEADER_H} rx={5} fill={fill} />
       <rect x={x} y={y + HEADER_H - 5} width={NODE_W} height={5} fill={fill} />
       <text x={x + 8} y={y + 17} fontFamily="Inter,sans-serif" fontSize={10.5} fontWeight="bold" fill="white">{name}</text>
       {shown.map((col, i) => (
         <text key={col.columnName} x={x + 8} y={y + HEADER_H + ROW_H * (i + 1) + 2}
-          fontFamily="Inter,sans-serif" fontSize={9} fill={i === 0 ? "#A85A2A" : "#555"}
+          fontFamily="Inter,sans-serif" fontSize={9} fill={i === 0 ? "#3730A3" : "#555"}
           fontWeight={i === 0 ? "600" : "normal"}>
           {i === 0 ? `🔑 ${col.columnName}` : col.columnName}
           <tspan fill="#aaa" fontSize={8}> {col.dataType}</tspan>
@@ -205,12 +205,12 @@ function StarSchemaDiagram({
         >
           <defs>
             <marker id="rd-arrow" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L6,3 z" fill="#A85A2A" opacity={0.5} />
+              <path d="M0,0 L0,6 L6,3 z" fill="#3730A3" opacity={0.5} />
             </marker>
           </defs>
           {dimPositions.map(({ name, cx, cy }) => (
             <line key={name} x1={cx} y1={cy} x2={CX} y2={CY}
-              stroke="#A85A2A" strokeWidth={1.5} strokeDasharray="5 3" opacity={0.45}
+              stroke="#3730A3" strokeWidth={1.5} strokeDasharray="5 3" opacity={0.45}
               markerEnd="url(#rd-arrow)" />
           ))}
           <SchemaNode x={factX} y={factY} name={starSchema.factTable} columns={factCols} isFact />
