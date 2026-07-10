@@ -408,7 +408,14 @@ function DataModelStep({
         </Stack>
       ) : modelResult ? (
         <Box>
-          <StarSchemaDiagram starSchema={modelResult.starSchema} tables={extractedSchema.tables} />
+          {modelResult.starSchema ? (
+            <StarSchemaDiagram starSchema={modelResult.starSchema} tables={extractedSchema.tables} />
+          ) : (
+            <Alert severity="warning">
+              Couldn't infer a star schema for this dataset — your template selection and Power BI
+              generation will still work, just without the schema preview above.
+            </Alert>
+          )}
           <Alert severity="info" sx={{ mt: 2 }}>
             Model generated in {modelResult.durationMs.toLocaleString()} ms.
             Relationships and measure suggestions will be applied to your Power BI template.
@@ -427,8 +434,9 @@ function TemplateStep({
   onSelect: (i: number) => void;
 }) {
   // Map API template options to visual themes; fall back to all themes if API data unavailable
-  const themes = modelResult?.templates.length
-    ? modelResult.templates.map((t) => ({
+  const apiTemplates = modelResult?.templates;
+  const themes = apiTemplates?.length
+    ? apiTemplates.map((t) => ({
         visual: themeById(t.themeId),
         score: t.score,
         apiName: t.themeName,

@@ -51,8 +51,10 @@ export interface TemplateOption {
 }
 
 export interface GenerateReportModelResponse {
-  starSchema: StarSchema;
-  templates: TemplateOption[];
+  // Both are best-effort: starSchema needs a fact table in the blueprint's data_model,
+  // templates needs stbi_transformers's /designs step to succeed. Neither is guaranteed.
+  starSchema?: StarSchema;
+  templates?: TemplateOption[];
   correlationId: string;
   durationMs: number;
 }
