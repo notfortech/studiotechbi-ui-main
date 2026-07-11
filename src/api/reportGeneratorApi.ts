@@ -34,12 +34,19 @@ export interface ReportChart {
   series: ReportChartSeries[];
 }
 
+export interface ReportSlicer {
+  column: string;
+  values: string[];
+}
+
 export interface GeneratedReport {
   templateId?: string;
   templateName?: string;
   primaryTable?: string;
   kpis: ReportKpi[];
   charts: ReportChart[];
+  slicers: ReportSlicer[];
+  appliedFilters: Record<string, string>;
   warnings: string[];
 }
 
@@ -78,11 +85,16 @@ export async function listReportTemplates(): Promise<ReportTemplateOption[]> {
   }
 }
 
-export async function generateReport(file: File, templateId?: string): Promise<GeneratedReport> {
+export async function generateReport(
+  file: File,
+  templateId?: string,
+  filters?: Record<string, string>
+): Promise<GeneratedReport> {
   try {
     const form = new FormData();
     form.append('file', file);
     if (templateId) form.append('templateId', templateId);
+    if (filters && Object.keys(filters).length > 0) form.append('filters', JSON.stringify(filters));
     const res = await apiAxiosInstance.post<ApiResponse<GeneratedReport>>(
       '/report-generator/generate',
       form,
