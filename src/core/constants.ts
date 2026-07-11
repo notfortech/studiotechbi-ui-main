@@ -53,6 +53,7 @@ export const ROUTES = {
     REPORTS_VIEW: '/client/reports/view',
     BLUEPRINT: '/client/blueprint',
     REPORT_DESIGNER: '/client/report-designer',
+    REPORT_GENERATOR: '/client/report-generator',
     PROPOSITIONS: '/client/propositions',
     PROFILE: '/client/profile',
   },

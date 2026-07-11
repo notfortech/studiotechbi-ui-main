@@ -32,6 +32,7 @@ import { ClientReportsPage } from '../portals/client/ReportsPage';
 import { ReportsListPage } from '../portals/client/ReportsListPage';
 import { BlueprintPage } from '../portals/client/BlueprintPage';
 import { ReportDesignerPage } from '../portals/client/ReportDesignerPage';
+import { ReportGeneratorPage } from '../portals/client/ReportGeneratorPage';
 import { PropositionsPage } from '../portals/client/PropositionsPage';
 import { ProfilePage } from '../portals/client/ProfilePage';
 import { ROUTES } from './constants';
@@ -200,6 +201,10 @@ export const routes: RouteObject[] = [
       {
         path: 'report-designer',
         element: <ReportDesignerPage />,
+      },
+      {
+        path: 'report-generator',
+        element: <ReportGeneratorPage />,
       },
       {
         path: 'propositions',

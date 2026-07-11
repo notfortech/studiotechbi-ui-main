@@ -53,7 +53,7 @@ import {
 
 // ── Visual theme definitions (frontend only) ─────────────────────────────────
 
-const REPORT_THEMES = [
+export const REPORT_THEMES = [
   { id: "warm-peach",   name: "Warm Peach",    primary: "#D4845A", dark: "#A85A2A", light: "#E8A878", bg: "#FBF4ED", label: "Elegant & warm" },
   { id: "ocean-blue",   name: "Ocean Blue",    primary: "#1E7FC1", dark: "#155A8A", light: "#4FA3D8", bg: "#EBF4FB", label: "Clean & professional" },
   { id: "forest",       name: "Forest Green",  primary: "#2D7A4F", dark: "#1E5235", light: "#5AAD7C", bg: "#EAF4EE", label: "Calm & trustworthy" },
@@ -62,9 +62,9 @@ const REPORT_THEMES = [
   { id: "slate-pro",    name: "Slate Pro",     primary: "#4A6580", dark: "#2E3F52", light: "#7A96B0", bg: "#EDF1F5", label: "Minimal & sharp" },
 ] as const;
 
-type VisualTheme = (typeof REPORT_THEMES)[number];
+export type VisualTheme = (typeof REPORT_THEMES)[number];
 
-function themeById(id: string): VisualTheme {
+export function themeById(id: string): VisualTheme {
   return REPORT_THEMES.find((t) => t.id === id) ?? REPORT_THEMES[0];
 }
 
