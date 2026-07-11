@@ -14,6 +14,10 @@ import {
   Alert,
   CircularProgress,
   LinearProgress,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
   alpha,
 } from "@mui/material";
 import {
@@ -21,6 +25,7 @@ import {
   CheckCircle as CheckCircleIcon,
   AutoGraph as ReportIcon,
   TrendingUp as KpiIcon,
+  FilterAlt as FilterIcon,
 } from "@mui/icons-material";
 import { useState, useRef } from "react";
 import {
@@ -193,7 +198,55 @@ function ReportChartCard({ chart, theme }: { chart: ReportChart; theme: VisualTh
   );
 }
 
-function ReportResultsStep({ report, theme }: { report: GeneratedReport; theme: VisualTheme }) {
+function FilterBar({
+  slicers, activeFilters, onFilterChange, onClearFilters, disabled,
+}: {
+  slicers: GeneratedReport["slicers"];
+  activeFilters: Record<string, string>;
+  onFilterChange: (column: string, value: string) => void;
+  onClearFilters: () => void;
+  disabled: boolean;
+}) {
+  if (slicers.length === 0) return null;
+  const hasActiveFilters = Object.keys(activeFilters).length > 0;
+
+  return (
+    <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" gap={1} sx={{ mb: 3 }}>
+      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ color: "text.secondary" }}>
+        <FilterIcon fontSize="small" />
+        <Typography variant="body2">Filters:</Typography>
+      </Stack>
+      {slicers.map((slicer) => (
+        <FormControl key={slicer.column} size="small" sx={{ minWidth: 160 }} disabled={disabled}>
+          <InputLabel>{slicer.column}</InputLabel>
+          <Select
+            label={slicer.column}
+            value={activeFilters[slicer.column] ?? ""}
+            onChange={(e) => onFilterChange(slicer.column, e.target.value)}
+          >
+            <MenuItem value="">All</MenuItem>
+            {slicer.values.map((v) => (
+              <MenuItem key={v} value={v}>{v}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      ))}
+      {hasActiveFilters && (
+        <Button size="small" onClick={onClearFilters} disabled={disabled}>Clear filters</Button>
+      )}
+    </Stack>
+  );
+}
+
+function ReportResultsStep({
+  report, theme, onFilterChange, onClearFilters, refreshing,
+}: {
+  report: GeneratedReport;
+  theme: VisualTheme;
+  onFilterChange: (column: string, value: string) => void;
+  onClearFilters: () => void;
+  refreshing: boolean;
+}) {
   return (
     <Box>
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
@@ -204,6 +257,15 @@ function ReportResultsStep({ report, theme }: { report: GeneratedReport; theme: 
           Computed from <strong>{report.primaryTable}</strong>.
         </Typography>
       )}
+
+      <FilterBar
+        slicers={report.slicers}
+        activeFilters={report.appliedFilters}
+        onFilterChange={onFilterChange}
+        onClearFilters={onClearFilters}
+        disabled={refreshing}
+      />
+      {refreshing && <LinearProgress sx={{ mb: 2, borderRadius: 1 }} />}
 
       {report.warnings.length > 0 && (
         <Alert severity="info" sx={{ mb: 2 }}>
@@ -240,6 +302,7 @@ export function ReportGeneratorPage() {
   const [selectedTheme, setSelectedTheme] = useState(0);
   const [report, setReport] = useState<GeneratedReport | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleGenerate() {
@@ -255,6 +318,32 @@ export function ReportGeneratorPage() {
     } finally {
       setGenerating(false);
     }
+  }
+
+  async function refetchWithFilters(filters: Record<string, string>) {
+    if (!uploadedFile || !report?.templateId) return;
+    setRefreshing(true);
+    setError(null);
+    try {
+      const result = await generateReport(uploadedFile, report.templateId, filters);
+      setReport(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to apply filter.");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  function handleFilterChange(column: string, value: string) {
+    if (!report) return;
+    const next = { ...report.appliedFilters };
+    if (value === "") delete next[column];
+    else next[column] = value;
+    void refetchWithFilters(next);
+  }
+
+  function handleClearFilters() {
+    void refetchWithFilters({});
   }
 
   function handleStartOver() {
@@ -303,7 +392,14 @@ export function ReportGeneratorPage() {
           </>
         )}
 
-        {step === 1 && report && <ReportResultsStep report={report} theme={theme} />}
+        {step === 1 && report && (
+          <ReportResultsStep
+            report={report} theme={theme}
+            onFilterChange={handleFilterChange}
+            onClearFilters={handleClearFilters}
+            refreshing={refreshing}
+          />
+        )}
 
         <Stack direction="row" justifyContent="flex-end" spacing={2}
           sx={{ mt: 4, pt: 3, borderTop: 1, borderColor: "divider" }}>
