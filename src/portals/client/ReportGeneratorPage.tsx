@@ -9,7 +9,9 @@ import {
   StepLabel,
   Grid,
   Card,
+  CardActionArea,
   CardContent,
+  Chip,
   Avatar,
   Alert,
   CircularProgress,
@@ -18,6 +20,8 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  ToggleButtonGroup,
+  ToggleButton,
   alpha,
 } from "@mui/material";
 import {
@@ -27,9 +31,10 @@ import {
   TrendingUp as KpiIcon,
   FilterAlt as FilterIcon,
   Palette as PaletteIcon,
+  Bolt as StrictIcon,
+  AutoAwesome as AiModeIcon,
 } from "@mui/icons-material";
-import { useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useRef, useEffect } from "react";
 import {
   ResponsiveContainer,
   LineChart,
@@ -43,14 +48,21 @@ import {
   Legend,
 } from "recharts";
 import {
+  extractSchemaFromExcel,
+  generateReportModel,
+  type ExtractedSchemaDto,
+  type GenerateReportModelResponse,
+  type StarSchema,
+  type TableInfo,
+} from "../../api/reportDesignerApi";
+import {
   generateReport,
   type GeneratedReport,
   type ReportChart,
 } from "../../api/reportGeneratorApi";
-import { themeById, type VisualTheme } from "./ReportDesignerPage";
-import { getPreferredThemeId } from "../../core/reportTheme";
-import { TrustBadge } from "../../components/common/TrustBadge";
-import { ROUTES } from "../../core/constants";
+import { REPORT_THEMES, themeById, MiniReportPreview, type VisualTheme } from "./reportThemes";
+import { setPreferredThemeId } from "../../core/reportTheme";
+import { TrustBadge, type TrustBadgeKind } from "../../components/common/TrustBadge";
 
 // ── Theme color cycling for multi-series/category charts ────────────────────
 
@@ -69,23 +81,44 @@ function toChartData(chart: ReportChart): Record<string, string | number>[] {
   });
 }
 
-// ── Step 1: upload + theme ───────────────────────────────────────────────────
+// ── Timed progress: the AI model call has no server-side progress signal,
+// so this animates toward (not past) an asymptote over the expected
+// duration rather than sitting on an indeterminate spinner for 1-3 minutes.
+// It never claims to be finished before the real response arrives.
 
-function ConnectAndStyleStep({
-  uploadedFile, onUpload, theme,
-}: {
-  uploadedFile: File | null; onUpload: (f: File) => void;
-  theme: VisualTheme;
-}) {
+function useTimedProgress(active: boolean, timeConstantSeconds = 55, cap = 92) {
+  const [elapsedMs, setElapsedMs] = useState(0);
+  useEffect(() => {
+    if (!active) {
+      setElapsedMs(0);
+      return;
+    }
+    const start = Date.now();
+    const id = setInterval(() => setElapsedMs(Date.now() - start), 250);
+    return () => clearInterval(id);
+  }, [active]);
+  const elapsedSeconds = elapsedMs / 1000;
+  const pct = cap * (1 - Math.exp(-elapsedSeconds / timeConstantSeconds));
+  return { elapsedSeconds, pct };
+}
+
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// ── Step 0: Connect Data ──────────────────────────────────────────────────────
+
+function ConnectDataStep({ uploadedFile, onUpload }: { uploadedFile: File | null; onUpload: (f: File) => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const navigate = useNavigate();
 
   return (
     <Box>
       <Typography variant="h6" fontWeight={700} gutterBottom>Connect Your Data</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Upload an Excel or CSV file. No AI is involved anywhere in this screen — a deterministic
-        engine profiles your columns and computes real KPI/chart values directly from the data.
+        Upload an Excel or CSV file. We'll extract its schema, propose a data model, and generate your
+        report from the same file — one upload, start to finish.
       </Typography>
 
       <input ref={fileInputRef} type="file" accept=".xlsx,.csv" style={{ display: "none" }}
@@ -114,30 +147,254 @@ function ConnectAndStyleStep({
         )}
       </Box>
 
-      <Card variant="outlined" sx={{ mt: 3 }}>
-        <CardContent sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2, flexWrap: "wrap" }}>
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <PaletteIcon sx={{ color: theme.primary }} />
-            <Box>
-              <Typography variant="body2" color="text.secondary">Report theme</Typography>
-              <Stack direction="row" spacing={0.75} alignItems="center">
-                {[theme.dark, theme.primary, theme.light].map((c) => (
-                  <Box key={c} sx={{ width: 14, height: 14, borderRadius: "50%", bgcolor: c }} />
-                ))}
-                <Typography fontWeight={600}>{theme.name}</Typography>
-              </Stack>
-            </Box>
-          </Stack>
-          <Button size="small" variant="outlined" onClick={() => navigate(ROUTES.CLIENT.REPORT_DESIGNER)}>
-            Change in Report Designer
-          </Button>
-        </CardContent>
-      </Card>
+      <Alert severity="info" sx={{ mt: 3 }}>
+        SQL Database and SharePoint connections are being re-added here soon — for now, upload a file directly.
+      </Alert>
     </Box>
   );
 }
 
-// ── Step 2: generated report ─────────────────────────────────────────────────
+// ── Step 1: Data Model ────────────────────────────────────────────────────────
+
+const NODE_W = 158;
+const HEADER_H = 26;
+const ROW_H = 16;
+const MAX_COLS = 6;
+const CX = 350;
+const CY = 200;
+const RADIUS = 155;
+
+function nodeHeight(colCount: number) {
+  return HEADER_H + (Math.min(colCount, MAX_COLS) + 1) * ROW_H + 6;
+}
+
+function SchemaNode({ x, y, name, columns, isFact }: {
+  x: number; y: number; name: string;
+  columns: TableInfo["columns"]; isFact?: boolean;
+}) {
+  const shown = columns.slice(0, MAX_COLS);
+  const h = nodeHeight(columns.length);
+  const fill = isFact ? "#4F46E5" : "#3730A3";
+
+  return (
+    <g>
+      <rect x={x} y={y} width={NODE_W} height={h} rx={5} fill="white" stroke="#c7d2fe" strokeWidth={1} />
+      <rect x={x} y={y} width={NODE_W} height={HEADER_H} rx={5} fill={fill} />
+      <rect x={x} y={y + HEADER_H - 5} width={NODE_W} height={5} fill={fill} />
+      <text x={x + 8} y={y + 17} fontFamily="Inter,sans-serif" fontSize={10.5} fontWeight="bold" fill="white">{name}</text>
+      {shown.map((col, i) => (
+        <text key={col.columnName} x={x + 8} y={y + HEADER_H + ROW_H * (i + 1) + 2}
+          fontFamily="Inter,sans-serif" fontSize={9} fill={i === 0 ? "#3730A3" : "#555"}
+          fontWeight={i === 0 ? "600" : "normal"}>
+          {i === 0 ? `🔑 ${col.columnName}` : col.columnName}
+          <tspan fill="#aaa" fontSize={8}> {col.dataType}</tspan>
+        </text>
+      ))}
+      {columns.length > MAX_COLS && (
+        <text x={x + 8} y={y + HEADER_H + ROW_H * (MAX_COLS + 1) + 2}
+          fontFamily="Inter,sans-serif" fontSize={8} fill="#aaa">
+          +{columns.length - MAX_COLS} more…
+        </text>
+      )}
+    </g>
+  );
+}
+
+function StarSchemaDiagram({ starSchema, tables }: { starSchema: StarSchema; tables: TableInfo[] }) {
+  const tableMap = new Map(tables.map((t) => [t.tableName, t]));
+  const factCols = tableMap.get(starSchema.factTable)?.columns ?? [];
+  const dims = starSchema.dimensionTables.slice(0, 7);
+  const N = dims.length;
+
+  const dimPositions = dims.map((name, i) => {
+    const angle = -Math.PI / 2 + (i / N) * 2 * Math.PI;
+    const cx = CX + RADIUS * Math.cos(angle);
+    const cy = CY + RADIUS * Math.sin(angle);
+    return { name, cx, cy, cols: tableMap.get(name)?.columns ?? [] };
+  });
+
+  const factH = nodeHeight(factCols.length);
+  const factX = CX - NODE_W / 2;
+  const factY = CY - factH / 2;
+
+  const allX = dimPositions.map((d) => d.cx - NODE_W / 2 - 8);
+  const allY = dimPositions.map((d) => d.cy - nodeHeight(d.cols.length) / 2 - 8);
+  const allX2 = dimPositions.map((d) => d.cx + NODE_W / 2 + 8);
+  const allY2 = dimPositions.map((d) => d.cy + nodeHeight(d.cols.length) / 2 + 8);
+  const vx = Math.min(...allX, factX - 8);
+  const vy = Math.min(...allY, factY - 8);
+  const vx2 = Math.max(...allX2, factX + NODE_W + 8);
+  const vy2 = Math.max(...allY2, factY + factH + 8);
+  const vw = vx2 - vx;
+  const vh = vy2 - vy;
+
+  const totalCols = tables.reduce((s, t) => s + t.columns.length, 0);
+
+  return (
+    <Box>
+      <Stack direction="row" spacing={1} flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
+        <Chip label="Star Schema" size="small" color="primary" />
+        <Chip label={`1 Fact · ${dims.length} Dimensions`} size="small" variant="outlined" />
+        <Chip label={`${tables.length} Tables · ${totalCols} Columns`} size="small" variant="outlined" />
+      </Stack>
+      <Paper variant="outlined" sx={{ p: 2, bgcolor: "background.default", overflowX: "auto" }}>
+        <svg
+          viewBox={`${vx} ${vy} ${vw} ${vh}`}
+          style={{ width: "100%", minWidth: 380, maxWidth: 780, display: "block", margin: "0 auto" }}
+        >
+          <defs>
+            <marker id="rg-arrow" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L6,3 z" fill="#3730A3" opacity={0.5} />
+            </marker>
+          </defs>
+          {dimPositions.map(({ name, cx, cy }) => (
+            <line key={name} x1={cx} y1={cy} x2={CX} y2={CY}
+              stroke="#3730A3" strokeWidth={1.5} strokeDasharray="5 3" opacity={0.45}
+              markerEnd="url(#rg-arrow)" />
+          ))}
+          <SchemaNode x={factX} y={factY} name={starSchema.factTable} columns={factCols} isFact />
+          {dimPositions.map(({ name, cx, cy, cols }) => (
+            <SchemaNode key={name}
+              x={cx - NODE_W / 2} y={cy - nodeHeight(cols.length) / 2}
+              name={name} columns={cols} />
+          ))}
+        </svg>
+      </Paper>
+    </Box>
+  );
+}
+
+function DataModelStep({
+  extractedSchema, modelResult, generating, generateError,
+}: {
+  extractedSchema: ExtractedSchemaDto;
+  modelResult: GenerateReportModelResponse | null;
+  generating: boolean;
+  generateError: string | null;
+}) {
+  const { elapsedSeconds, pct } = useTimedProgress(generating);
+
+  return (
+    <Box>
+      <Typography variant="h6" fontWeight={700} gutterBottom>Generated Data Model</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+        Based on <strong>{extractedSchema.fileName}</strong> ({extractedSchema.tables.length} table{extractedSchema.tables.length !== 1 ? "s" : ""}
+        {" "}· extracted {new Date(extractedSchema.extractedAt).toLocaleTimeString()}),
+        the AI is inferring a star schema and scoring report templates.
+      </Typography>
+
+      {generateError && <Alert severity="error" sx={{ mb: 2 }}>{generateError}</Alert>}
+
+      {generating ? (
+        <Stack spacing={1.5} sx={{ py: 4 }}>
+          <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+            <Typography variant="body2" color="text.secondary">
+              Analysing schema and generating your model — usually takes 1–3 minutes.
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
+              {formatElapsed(elapsedSeconds)} elapsed
+            </Typography>
+          </Stack>
+          <LinearProgress variant="determinate" value={pct} sx={{ borderRadius: 1, height: 8 }} />
+          {elapsedSeconds > 150 && (
+            <Typography variant="caption" color="text.secondary" textAlign="center">
+              Still working — complex datasets can take a little longer than usual.
+            </Typography>
+          )}
+        </Stack>
+      ) : modelResult ? (
+        <Box>
+          {modelResult.starSchema ? (
+            <StarSchemaDiagram starSchema={modelResult.starSchema} tables={extractedSchema.tables} />
+          ) : (
+            <Alert severity="warning">
+              Couldn't infer a star schema for this dataset — template selection and report generation
+              will still work, just without the schema preview above.
+            </Alert>
+          )}
+          <Alert severity="info" sx={{ mt: 2 }}>
+            Model generated in {modelResult.durationMs.toLocaleString()} ms.
+          </Alert>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
+// ── Step 2: Report Template ───────────────────────────────────────────────────
+
+function TemplateStep({
+  modelResult, selected, onSelect,
+}: {
+  modelResult: GenerateReportModelResponse | null;
+  selected: number | null;
+  onSelect: (i: number) => void;
+}) {
+  const apiTemplates = modelResult?.templates;
+  const themes = apiTemplates?.length
+    ? apiTemplates.map((t) => ({ visual: themeById(t.themeId), score: t.score, apiName: t.themeName }))
+    : REPORT_THEMES.map((t) => ({ visual: t, score: 0, apiName: t.name }));
+
+  return (
+    <Box>
+      <Typography variant="h6" fontWeight={700} gutterBottom>Choose a Report Template</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+        Each template applies a colour theme to your KPI tiles, charts, and tables across every report page.
+        {modelResult && " Templates are scored by the AI based on your data's characteristics."}
+      </Typography>
+
+      <Grid container spacing={2}>
+        {themes.map(({ visual, score, apiName }, i) => (
+          <Grid key={visual.id} size={{ xs: 12, sm: 6, md: 4 }}>
+            <Card variant="outlined" sx={{
+              borderColor: selected === i ? "primary.main" : "divider",
+              borderWidth: selected === i ? 2 : 1,
+              transition: "all 0.15s",
+              height: "100%",
+            }}>
+              <CardActionArea
+                onClick={() => { onSelect(i); setPreferredThemeId(visual.id); }}
+                sx={{ height: "100%" }}
+              >
+                <CardContent sx={{ p: 2 }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
+                    <Stack direction="row" spacing={0.75} alignItems="center">
+                      <PaletteIcon sx={{ fontSize: 16, color: visual.primary }} />
+                      <Typography variant="subtitle2" fontWeight={700}>{apiName}</Typography>
+                    </Stack>
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                      {score >= 0.8 && (
+                        <Chip label="Recommended" size="small" color="primary" sx={{ fontSize: 10, height: 20 }} />
+                      )}
+                      {selected === i && <CheckCircleIcon color="primary" fontSize="small" />}
+                    </Stack>
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
+                    {visual.label}{score > 0 ? ` · match ${Math.round(score * 100)}%` : ""}
+                  </Typography>
+                  <MiniReportPreview theme={visual} />
+                  <Stack direction="row" spacing={0.5} sx={{ mt: 1.5 }}>
+                    {[visual.dark, visual.primary, visual.light, visual.bg].map((color) => (
+                      <Box key={color} sx={{
+                        width: 18, height: 18, borderRadius: "50%", bgcolor: color,
+                        border: "1px solid", borderColor: "divider",
+                      }} />
+                    ))}
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5, alignSelf: "center" }}>
+                      {visual.primary}
+                    </Typography>
+                  </Stack>
+                </CardContent>
+              </CardActionArea>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+    </Box>
+  );
+}
+
+// ── Step 3: Report ────────────────────────────────────────────────────────────
 
 function ReportKpiCard({ kpi, color }: { kpi: GeneratedReport["kpis"][number]; color: string }) {
   return (
@@ -162,7 +419,6 @@ function ReportKpiCard({ kpi, color }: { kpi: GeneratedReport["kpis"][number]; c
 function ReportChartCard({ chart, theme }: { chart: ReportChart; theme: VisualTheme }) {
   const data = toChartData(chart);
   const colors = colorCycle(theme);
-  const dataKey = chart.type === "line" ? "label" : "label";
 
   return (
     <Card variant="outlined">
@@ -172,7 +428,7 @@ function ReportChartCard({ chart, theme }: { chart: ReportChart; theme: VisualTh
           {chart.type === "line" ? (
             <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={dataKey} />
+              <XAxis dataKey="label" />
               <YAxis />
               <Tooltip />
               <Legend />
@@ -184,7 +440,7 @@ function ReportChartCard({ chart, theme }: { chart: ReportChart; theme: VisualTh
           ) : (
             <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={dataKey} />
+              <XAxis dataKey="label" />
               <YAxis />
               <Tooltip />
               <Legend />
@@ -295,40 +551,139 @@ function ReportResultsStep({
 
 // ── Page shell ────────────────────────────────────────────────────────────────
 
-const STEPS = ["Connect & Style", "Report"];
+type Mode = "strict" | "ai";
+type FlowStep = "connect" | "model" | "template" | "report";
+
+const STEPS_BY_MODE: Record<Mode, { key: FlowStep; label: string }[]> = {
+  strict: [
+    { key: "connect", label: "Connect Data" },
+    { key: "template", label: "Report Template" },
+    { key: "report", label: "Report" },
+  ],
+  ai: [
+    { key: "connect", label: "Connect Data" },
+    { key: "model", label: "Data Model" },
+    { key: "template", label: "Report Template" },
+    { key: "report", label: "Report" },
+  ],
+};
+
+function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
+  return (
+    <Box sx={{ mb: 3 }}>
+      <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>How do you want to generate your report?</Typography>
+      <ToggleButtonGroup
+        exclusive
+        value={mode}
+        onChange={(_, v) => v && onChange(v)}
+        sx={{ mb: 1 }}
+      >
+        <ToggleButton value="strict" sx={{ textTransform: "none", px: 2, py: 1 }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <StrictIcon fontSize="small" />
+            <Box textAlign="left">
+              <Typography variant="body2" fontWeight={700}>Strict Python Report</Typography>
+              <Typography variant="caption" color="text.secondary">Fastest — no AI involved anywhere</Typography>
+            </Box>
+          </Stack>
+        </ToggleButton>
+        <ToggleButton value="ai" sx={{ textTransform: "none", px: 2, py: 1 }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <AiModeIcon fontSize="small" />
+            <Box textAlign="left">
+              <Typography variant="body2" fontWeight={700}>AI-Assisted</Typography>
+              <Typography variant="caption" color="text.secondary">AI proposes a model &amp; template match</Typography>
+            </Box>
+          </Stack>
+        </ToggleButton>
+      </ToggleButtonGroup>
+      <Typography variant="caption" color="text.secondary" display="block">
+        {mode === "strict"
+          ? "Skips schema analysis entirely — you'll pick a theme and get a report in one pass."
+          : "AI compares your schema against report templates and proposes a data model. The report itself is always generated by the deterministic Python/.NET engine below — never AI."}
+      </Typography>
+    </Box>
+  );
+}
 
 export function ReportGeneratorPage() {
-  const [step, setStep] = useState(0);
+  const [mode, setMode] = useState<Mode>("strict");
+  const [flowStep, setFlowStep] = useState<FlowStep>("connect");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [report, setReport] = useState<GeneratedReport | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  async function handleGenerate() {
+  const [extractedSchema, setExtractedSchema] = useState<ExtractedSchemaDto | null>(null);
+  const [modelResult, setModelResult] = useState<GenerateReportModelResponse | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
+  const [modelGenerating, setModelGenerating] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
+
+  const [selectedTheme, setSelectedTheme] = useState<number | null>(null);
+
+  const [report, setReport] = useState<GeneratedReport | null>(null);
+  const [reportGenerating, setReportGenerating] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const steps = STEPS_BY_MODE[mode];
+  const activeIndex = steps.findIndex((s) => s.key === flowStep);
+
+  async function handleConnectNext() {
     if (!uploadedFile) return;
-    setError(null);
-    setGenerating(true);
+
+    if (mode === "strict") {
+      setFlowStep("template");
+      return;
+    }
+
+    setExtractError(null);
+    setExtracting(true);
+    try {
+      const schema = await extractSchemaFromExcel(uploadedFile);
+      setExtractedSchema(schema);
+      setFlowStep("model");
+
+      setModelGenerating(true);
+      setModelError(null);
+      try {
+        const model = await generateReportModel(schema);
+        setModelResult(model);
+      } catch (err) {
+        setModelError(err instanceof Error ? err.message : "Model generation failed.");
+      } finally {
+        setModelGenerating(false);
+      }
+    } catch (err) {
+      setExtractError(err instanceof Error ? err.message : "Failed to extract schema.");
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  async function handleGenerateReport() {
+    if (!uploadedFile) return;
+    setReportError(null);
+    setReportGenerating(true);
     try {
       const result = await generateReport(uploadedFile);
       setReport(result);
-      setStep(1);
+      setFlowStep("report");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate report.");
+      setReportError(err instanceof Error ? err.message : "Failed to generate report.");
     } finally {
-      setGenerating(false);
+      setReportGenerating(false);
     }
   }
 
   async function refetchWithFilters(filters: Record<string, string>) {
     if (!uploadedFile || !report?.templateId) return;
     setRefreshing(true);
-    setError(null);
+    setReportError(null);
     try {
       const result = await generateReport(uploadedFile, report.templateId, filters);
       setReport(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to apply filter.");
+      setReportError(err instanceof Error ? err.message : "Failed to apply filter.");
     } finally {
       setRefreshing(false);
     }
@@ -346,14 +701,27 @@ export function ReportGeneratorPage() {
     void refetchWithFilters({});
   }
 
-  function handleStartOver() {
-    setStep(0);
-    setUploadedFile(null);
-    setReport(null);
-    setError(null);
+  function handleBack() {
+    if (activeIndex > 0) setFlowStep(steps[activeIndex - 1].key);
   }
 
-  const theme = themeById(getPreferredThemeId());
+  function handleStartOver() {
+    setFlowStep("connect");
+    setUploadedFile(null);
+    setExtractedSchema(null);
+    setModelResult(null);
+    setSelectedTheme(null);
+    setReport(null);
+    setExtractError(null);
+    setModelError(null);
+    setReportError(null);
+  }
+
+  const theme = REPORT_THEMES[selectedTheme ?? 0];
+  const canProceedConnect = !!uploadedFile && !extracting;
+  const canProceedModel = !modelGenerating;
+  const canProceedTemplate = selectedTheme !== null && !reportGenerating;
+  const badgeKind: TrustBadgeKind = flowStep === "report" ? "deterministic" : mode === "strict" ? "deterministic" : "ai";
 
   return (
     <Box>
@@ -364,38 +732,44 @@ export function ReportGeneratorPage() {
             <Box>
               <Typography variant="h5" fontWeight={600}>Report Generator</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Connect your data and get a real report, styled with your Report Designer theme.
+                Connect your data, pick a theme, and get a real report — generated by a deterministic engine, never AI.
               </Typography>
             </Box>
           </Stack>
-          <TrustBadge kind="deterministic" />
+          <TrustBadge kind={badgeKind} />
         </Stack>
 
-        <Stepper activeStep={step} sx={{ mb: 4 }}>
-          {STEPS.map((label) => (
-            <Step key={label}><StepLabel>{label}</StepLabel></Step>
+        <Stepper activeStep={activeIndex} sx={{ mb: 4 }}>
+          {steps.map((s) => (
+            <Step key={s.key}><StepLabel>{s.label}</StepLabel></Step>
           ))}
         </Stepper>
 
-        {step === 0 && (
+        {flowStep === "connect" && (
           <>
-            <ConnectAndStyleStep
-              uploadedFile={uploadedFile} onUpload={setUploadedFile}
-              theme={theme}
-            />
-            {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
-            {generating && (
-              <Stack spacing={1} sx={{ mt: 2 }}>
-                <Typography variant="body2" color="text.secondary" textAlign="center">
-                  Profiling columns and computing your report…
-                </Typography>
-                <LinearProgress sx={{ borderRadius: 1 }} />
-              </Stack>
-            )}
+            <ModeToggle mode={mode} onChange={setMode} />
+            <ConnectDataStep uploadedFile={uploadedFile} onUpload={setUploadedFile} />
+            {extractError && <Alert severity="error" sx={{ mt: 2 }}>{extractError}</Alert>}
           </>
         )}
 
-        {step === 1 && report && (
+        {flowStep === "model" && extractedSchema && (
+          <DataModelStep
+            extractedSchema={extractedSchema}
+            modelResult={modelResult}
+            generating={modelGenerating}
+            generateError={modelError}
+          />
+        )}
+
+        {flowStep === "template" && (
+          <>
+            <TemplateStep modelResult={modelResult} selected={selectedTheme} onSelect={setSelectedTheme} />
+            {reportError && <Alert severity="error" sx={{ mt: 2 }}>{reportError}</Alert>}
+          </>
+        )}
+
+        {flowStep === "report" && report && (
           <ReportResultsStep
             report={report} theme={theme}
             onFilterChange={handleFilterChange}
@@ -406,15 +780,34 @@ export function ReportGeneratorPage() {
 
         <Stack direction="row" justifyContent="flex-end" spacing={2}
           sx={{ mt: 4, pt: 3, borderTop: 1, borderColor: "divider" }}>
-          {step === 0 && (
-            <Button variant="contained"
-              disabled={!uploadedFile || generating}
-              onClick={handleGenerate}
-              startIcon={generating ? <CircularProgress size={16} color="inherit" /> : undefined}>
-              {generating ? "Generating…" : "Generate Report"}
+          {activeIndex > 0 && flowStep !== "report" && (
+            <Button variant="outlined" onClick={handleBack}
+              disabled={(flowStep === "model" && modelGenerating) || reportGenerating}>
+              Back
             </Button>
           )}
-          {step === 1 && (
+          {flowStep === "connect" && (
+            <Button variant="contained"
+              disabled={!canProceedConnect}
+              onClick={handleConnectNext}
+              startIcon={extracting ? <CircularProgress size={16} color="inherit" /> : undefined}>
+              {extracting ? "Extracting schema…" : "Next"}
+            </Button>
+          )}
+          {flowStep === "model" && (
+            <Button variant="contained" disabled={!canProceedModel} onClick={() => setFlowStep("template")}>
+              {modelGenerating ? "Generating model…" : "Next"}
+            </Button>
+          )}
+          {flowStep === "template" && (
+            <Button variant="contained"
+              disabled={!canProceedTemplate}
+              onClick={handleGenerateReport}
+              startIcon={reportGenerating ? <CircularProgress size={16} color="inherit" /> : undefined}>
+              {reportGenerating ? "Generating report…" : "Generate Report"}
+            </Button>
+          )}
+          {flowStep === "report" && (
             <Button variant="outlined" onClick={handleStartOver}>Start Over</Button>
           )}
         </Stack>
