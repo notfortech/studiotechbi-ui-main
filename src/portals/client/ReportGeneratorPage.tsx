@@ -26,8 +26,10 @@ import {
   AutoGraph as ReportIcon,
   TrendingUp as KpiIcon,
   FilterAlt as FilterIcon,
+  Palette as PaletteIcon,
 } from "@mui/icons-material";
 import { useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ResponsiveContainer,
   LineChart,
@@ -45,7 +47,10 @@ import {
   type GeneratedReport,
   type ReportChart,
 } from "../../api/reportGeneratorApi";
-import { REPORT_THEMES, type VisualTheme } from "./ReportDesignerPage";
+import { themeById, type VisualTheme } from "./ReportDesignerPage";
+import { getPreferredThemeId } from "../../core/reportTheme";
+import { TrustBadge } from "../../components/common/TrustBadge";
+import { ROUTES } from "../../core/constants";
 
 // ── Theme color cycling for multi-series/category charts ────────────────────
 
@@ -67,12 +72,13 @@ function toChartData(chart: ReportChart): Record<string, string | number>[] {
 // ── Step 1: upload + theme ───────────────────────────────────────────────────
 
 function ConnectAndStyleStep({
-  uploadedFile, onUpload, selectedTheme, onSelectTheme,
+  uploadedFile, onUpload, theme,
 }: {
   uploadedFile: File | null; onUpload: (f: File) => void;
-  selectedTheme: number; onSelectTheme: (i: number) => void;
+  theme: VisualTheme;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
 
   return (
     <Box>
@@ -108,30 +114,25 @@ function ConnectAndStyleStep({
         )}
       </Box>
 
-      <Typography variant="h6" fontWeight={700} sx={{ mt: 4, mb: 1 }}>Choose a Colour Theme</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Applied to your KPI tiles and charts below.
-      </Typography>
-      <Grid container spacing={1.5}>
-        {REPORT_THEMES.map((theme, i) => (
-          <Grid key={theme.id} size={{ xs: 6, sm: 4, md: 2 }}>
-            <Card variant="outlined" sx={{
-              borderColor: selectedTheme === i ? "primary.main" : "divider",
-              borderWidth: selectedTheme === i ? 2 : 1,
-              cursor: "pointer",
-            }} onClick={() => onSelectTheme(i)}>
-              <CardContent sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}>
-                <Stack direction="row" spacing={0.5} sx={{ mb: 1 }}>
-                  {[theme.dark, theme.primary, theme.light].map((c) => (
-                    <Box key={c} sx={{ width: 16, height: 16, borderRadius: "50%", bgcolor: c }} />
-                  ))}
-                </Stack>
-                <Typography variant="caption" fontWeight={600} display="block">{theme.name}</Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
+      <Card variant="outlined" sx={{ mt: 3 }}>
+        <CardContent sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2, flexWrap: "wrap" }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <PaletteIcon sx={{ color: theme.primary }} />
+            <Box>
+              <Typography variant="body2" color="text.secondary">Report theme</Typography>
+              <Stack direction="row" spacing={0.75} alignItems="center">
+                {[theme.dark, theme.primary, theme.light].map((c) => (
+                  <Box key={c} sx={{ width: 14, height: 14, borderRadius: "50%", bgcolor: c }} />
+                ))}
+                <Typography fontWeight={600}>{theme.name}</Typography>
+              </Stack>
+            </Box>
+          </Stack>
+          <Button size="small" variant="outlined" onClick={() => navigate(ROUTES.CLIENT.REPORT_DESIGNER)}>
+            Change in Report Designer
+          </Button>
+        </CardContent>
+      </Card>
     </Box>
   );
 }
@@ -299,7 +300,6 @@ const STEPS = ["Connect & Style", "Report"];
 export function ReportGeneratorPage() {
   const [step, setStep] = useState(0);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [selectedTheme, setSelectedTheme] = useState(0);
   const [report, setReport] = useState<GeneratedReport | null>(null);
   const [generating, setGenerating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -353,19 +353,22 @@ export function ReportGeneratorPage() {
     setError(null);
   }
 
-  const theme = REPORT_THEMES[selectedTheme];
+  const theme = themeById(getPreferredThemeId());
 
   return (
     <Box>
       <Paper sx={{ p: 3 }}>
-        <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 4 }}>
-          <ReportIcon color="primary" />
-          <Box>
-            <Typography variant="h5" fontWeight={600}>Report Generator</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Connect your data, pick a colour theme, and get a real report — no AI involved.
-            </Typography>
-          </Box>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 4 }}>
+          <Stack direction="row" alignItems="center" spacing={1.5}>
+            <ReportIcon color="primary" />
+            <Box>
+              <Typography variant="h5" fontWeight={600}>Report Generator</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                Connect your data and get a real report, styled with your Report Designer theme.
+              </Typography>
+            </Box>
+          </Stack>
+          <TrustBadge kind="deterministic" />
         </Stack>
 
         <Stepper activeStep={step} sx={{ mb: 4 }}>
@@ -378,7 +381,7 @@ export function ReportGeneratorPage() {
           <>
             <ConnectAndStyleStep
               uploadedFile={uploadedFile} onUpload={setUploadedFile}
-              selectedTheme={selectedTheme} onSelectTheme={setSelectedTheme}
+              theme={theme}
             />
             {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
             {generating && (
