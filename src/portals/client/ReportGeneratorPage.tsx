@@ -23,6 +23,11 @@ import {
   ToggleButtonGroup,
   ToggleButton,
   alpha,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from "@mui/material";
 import {
   CloudUpload as UploadIcon,
@@ -33,8 +38,10 @@ import {
   Palette as PaletteIcon,
   Bolt as StrictIcon,
   AutoAwesome as AiModeIcon,
+  SmartToy as AiConsentIcon,
 } from "@mui/icons-material";
 import { useState, useRef, useEffect } from "react";
+import { useAuth } from "../../auth/AuthContext";
 import {
   ResponsiveContainer,
   LineChart,
@@ -50,6 +57,7 @@ import {
 import {
   extractSchemaFromExcel,
   generateReportModel,
+  recordAiConsent,
   type ExtractedSchemaDto,
   type GenerateReportModelResponse,
   type StarSchema,
@@ -265,12 +273,13 @@ function StarSchemaDiagram({ starSchema, tables }: { starSchema: StarSchema; tab
 }
 
 function DataModelStep({
-  extractedSchema, modelResult, generating, generateError,
+  extractedSchema, modelResult, generating, generateError, aiDeclined,
 }: {
   extractedSchema: ExtractedSchemaDto;
   modelResult: GenerateReportModelResponse | null;
   generating: boolean;
   generateError: string | null;
+  aiDeclined: boolean;
 }) {
   const { elapsedSeconds, pct } = useTimedProgress(generating);
 
@@ -285,7 +294,12 @@ function DataModelStep({
 
       {generateError && <Alert severity="error" sx={{ mb: 2 }}>{generateError}</Alert>}
 
-      {generating ? (
+      {aiDeclined ? (
+        <Alert severity="info">
+          AI matching was skipped, as you chose not to share your schema with it. Pick a report
+          template manually on the next step.
+        </Alert>
+      ) : generating ? (
         <Stack spacing={1.5} sx={{ py: 4 }}>
           <Stack direction="row" justifyContent="space-between" alignItems="baseline">
             <Typography variant="body2" color="text.secondary">
@@ -607,6 +621,9 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
 }
 
 export function ReportGeneratorPage() {
+  const { user } = useAuth();
+  const clientId = user?.clientCode ?? "";
+
   const [mode, setMode] = useState<Mode>("strict");
   const [flowStep, setFlowStep] = useState<FlowStep>("connect");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -617,6 +634,11 @@ export function ReportGeneratorPage() {
   const [extractError, setExtractError] = useState<string | null>(null);
   const [modelGenerating, setModelGenerating] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
+
+  // AI consent gate — shown after schema extraction, before any AI call is made.
+  const [consentDialogOpen, setConsentDialogOpen] = useState(false);
+  const [consentDeciding, setConsentDeciding] = useState(false);
+  const [aiDeclined, setAiDeclined] = useState(false);
 
   const [selectedTheme, setSelectedTheme] = useState<number | null>(null);
 
@@ -642,21 +664,54 @@ export function ReportGeneratorPage() {
       const schema = await extractSchemaFromExcel(uploadedFile);
       setExtractedSchema(schema);
       setFlowStep("model");
+      setAiDeclined(false);
 
-      setModelGenerating(true);
-      setModelError(null);
-      try {
-        const model = await generateReportModel(schema);
-        setModelResult(model);
-      } catch (err) {
-        setModelError(err instanceof Error ? err.message : "Model generation failed.");
-      } finally {
-        setModelGenerating(false);
-      }
+      // Ask before the schema is ever sent to AI — generation only starts once
+      // the user responds to the consent dialog.
+      setConsentDialogOpen(true);
     } catch (err) {
       setExtractError(err instanceof Error ? err.message : "Failed to extract schema.");
     } finally {
       setExtracting(false);
+    }
+  }
+
+  async function handleConsentDecision(granted: boolean) {
+    if (!extractedSchema) return;
+
+    setConsentDeciding(true);
+    try {
+      await recordAiConsent(clientId, extractedSchema.schemaHash, granted);
+    } catch (err) {
+      if (granted) {
+        // Can't proceed to generation without a recorded grant — the backend
+        // will reject it anyway. Surface the error and let the user retry.
+        setConsentDeciding(false);
+        setConsentDialogOpen(false);
+        setModelError(err instanceof Error ? err.message : "Failed to record consent.");
+        return;
+      }
+      // Decline is logged server-side on a best-effort basis; still honour the
+      // user's choice locally even if the request itself failed.
+    }
+
+    setConsentDeciding(false);
+    setConsentDialogOpen(false);
+
+    if (!granted) {
+      setAiDeclined(true);
+      return;
+    }
+
+    setModelGenerating(true);
+    setModelError(null);
+    try {
+      const model = await generateReportModel(clientId, extractedSchema);
+      setModelResult(model);
+    } catch (err) {
+      setModelError(err instanceof Error ? err.message : "Model generation failed.");
+    } finally {
+      setModelGenerating(false);
     }
   }
 
@@ -715,6 +770,7 @@ export function ReportGeneratorPage() {
     setExtractError(null);
     setModelError(null);
     setReportError(null);
+    setAiDeclined(false);
   }
 
   const theme = REPORT_THEMES[selectedTheme ?? 0];
@@ -759,6 +815,7 @@ export function ReportGeneratorPage() {
             modelResult={modelResult}
             generating={modelGenerating}
             generateError={modelError}
+            aiDeclined={aiDeclined}
           />
         )}
 
@@ -812,6 +869,35 @@ export function ReportGeneratorPage() {
           )}
         </Stack>
       </Paper>
+
+      <Dialog open={consentDialogOpen} maxWidth="xs" fullWidth>
+        <DialogTitle>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <AiConsentIcon color="primary" />
+            <span>Use AI to analyse your data's structure?</span>
+          </Stack>
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            We'll send only your column names and data types — never the data itself — to
+            recommend the closest-matching report model and template. You can decline and
+            choose a template manually instead.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => handleConsentDecision(false)} disabled={consentDeciding}>
+            Not now
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => handleConsentDecision(true)}
+            disabled={consentDeciding}
+            startIcon={consentDeciding ? <CircularProgress size={16} color="inherit" /> : undefined}
+          >
+            Allow AI matching
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
