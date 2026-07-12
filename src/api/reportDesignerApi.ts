@@ -57,6 +57,12 @@ export interface GenerateReportModelResponse {
   durationMs: number;
 }
 
+export interface ConsentDecisionResponse {
+  granted: boolean;
+  schemaHash: string;
+  decidedAt: string;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 interface ApiResponse<T> {
@@ -142,14 +148,36 @@ export async function extractSchemaFromSharePoint(params: {
   }
 }
 
+/**
+ * Records (or declines) consent to send this schema's column names/types — never
+ * row data — to the Report Designer AI. Must be called with granted=true before
+ * generateReportModel will succeed for the same clientId + schema.
+ */
+export async function recordAiConsent(
+  clientId: string,
+  schemaHash: string,
+  granted: boolean
+): Promise<ConsentDecisionResponse> {
+  try {
+    const res = await apiAxiosInstance.post<ApiResponse<ConsentDecisionResponse>>(
+      '/report-designer/consent',
+      { clientId, schemaHash, consentGranted: granted }
+    );
+    return extractData(res.data);
+  } catch (err) {
+    throw err instanceof Error ? err : apiError(err, 'Failed to record consent decision.');
+  }
+}
+
 export async function generateReportModel(
+  clientId: string,
   schema: ExtractedSchemaDto,
   preferredTheme?: string
 ): Promise<GenerateReportModelResponse> {
   try {
     const res = await apiAxiosInstance.post<ApiResponse<GenerateReportModelResponse>>(
       '/report-designer/generate-model',
-      { schema, ...(preferredTheme ? { preferredTheme } : {}) }
+      { clientId, schema, ...(preferredTheme ? { preferredTheme } : {}) }
     );
     return extractData(res.data);
   } catch (err) {
