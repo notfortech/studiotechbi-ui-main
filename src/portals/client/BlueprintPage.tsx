@@ -33,6 +33,7 @@ import { BlueprintHistoryTable } from "./BlueprintHistoryTable";
 import { useAuth } from "../../auth/AuthContext";
 import { useClientView } from "../../layouts/client/ClientViewContext";
 import { canSelectReportClient } from "../../core/reportClientAccess";
+import { TrustBadge } from "../../components/common/TrustBadge";
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
@@ -158,16 +159,19 @@ export function BlueprintPage() {
   return (
     <Box>
       <Paper sx={{ p: 3 }}>
-        <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 3 }}>
-          <BlueprintIcon color="primary" />
-          <Box>
-            <Typography variant="h5" fontWeight={600}>
-              Generate Blueprint
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Describe your business requirements and we'll generate a tailored data blueprint PDF.
-            </Typography>
-          </Box>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 3 }}>
+          <Stack direction="row" alignItems="center" spacing={1.5}>
+            <BlueprintIcon color="primary" />
+            <Box>
+              <Typography variant="h5" fontWeight={600}>
+                Generate Blueprint
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                Describe your business requirements and we'll generate a tailored data blueprint PDF.
+              </Typography>
+            </Box>
+          </Stack>
+          <TrustBadge kind="ai" />
         </Stack>
 
         {/* Generation progress bar */}

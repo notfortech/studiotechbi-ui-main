@@ -38,6 +38,8 @@ import {
   VisibilityOff,
 } from "@mui/icons-material";
 import { useState, useRef } from "react";
+import { TrustBadge } from "../../components/common/TrustBadge";
+import { setPreferredThemeId } from "../../core/reportTheme";
 import {
   extractSchemaFromExcel,
   extractSchemaFromSql,
@@ -449,6 +451,7 @@ function TemplateStep({
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
         Each template applies a colour theme to your KPI tiles, charts, and tables across every report page.
         {modelResult && " Templates are scored by the AI based on your data's characteristics."}
+        {" "}Your choice here also becomes the default theme in Report Generator.
       </Typography>
 
       <Grid container spacing={2}>
@@ -460,7 +463,10 @@ function TemplateStep({
               transition: "all 0.15s",
               height: "100%",
             }}>
-              <CardActionArea onClick={() => onSelect(i)} sx={{ height: "100%" }}>
+              <CardActionArea
+                onClick={() => { onSelect(i); setPreferredThemeId(visual.id); }}
+                sx={{ height: "100%" }}
+              >
                 <CardContent sx={{ p: 2 }}>
                   <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
                     <Stack direction="row" spacing={0.75} alignItems="center">
@@ -636,14 +642,17 @@ export function ReportDesignerPage() {
   return (
     <Box>
       <Paper sx={{ p: 3 }}>
-        <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 4 }}>
-          <PaletteIcon color="primary" />
-          <Box>
-            <Typography variant="h5" fontWeight={600}>Report Designer</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Connect your data, review the generated schema, then pick a colour theme for your Power BI report.
-            </Typography>
-          </Box>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 4 }}>
+          <Stack direction="row" alignItems="center" spacing={1.5}>
+            <PaletteIcon color="primary" />
+            <Box>
+              <Typography variant="h5" fontWeight={600}>Report Designer</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                Connect your data, review the generated schema, then pick a colour theme for your Power BI report.
+              </Typography>
+            </Box>
+          </Stack>
+          <TrustBadge kind="ai" />
         </Stack>
 
         <Stepper activeStep={step} sx={{ mb: 4 }}>
