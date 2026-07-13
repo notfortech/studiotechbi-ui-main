@@ -310,13 +310,25 @@ function SchemaModelMatchPanel({
         </Alert>
       ) : matchResult?.schemaModelId ? (
         <Box>
+          {matchResult.matchSource === "AiProposedNew" && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Nothing in the library was a good fit, so the AI proposed a new model and dashboard
+              template below — added to the library immediately, no review step.
+            </Alert>
+          )}
           <Stack direction="row" spacing={1} flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
             <Chip label={matchResult.industry || "Cross-Industry"} size="small" color="primary" />
             <Chip
-              label={matchResult.matchSource === "AiMatched" ? "AI-matched" : "Matched"}
+              label={
+                matchResult.matchSource === "AiProposedNew" ? "AI-proposed (new)"
+                  : matchResult.matchSource === "AiMatched" ? "AI-matched"
+                  : "Matched"
+              }
               size="small" variant="outlined"
             />
-            <Chip label={`Confidence ${Math.round(matchResult.confidence * 100)}%`} size="small" variant="outlined" />
+            {matchResult.matchSource !== "AiProposedNew" && (
+              <Chip label={`Confidence ${Math.round(matchResult.confidence * 100)}%`} size="small" variant="outlined" />
+            )}
           </Stack>
 
           <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
