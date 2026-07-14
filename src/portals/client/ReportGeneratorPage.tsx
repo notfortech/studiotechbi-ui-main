@@ -30,14 +30,31 @@ import {
   Palette as PaletteIcon,
   Bolt as StrictIcon,
   AutoAwesome as AiModeIcon,
+  WorkspacePremium as PremiumIcon,
+  BarChart as BarFormatIcon,
+  DonutLarge as DonutFormatIcon,
+  FormatListNumbered as RankedFormatIcon,
+  TrackChanges as RadarFormatIcon,
+  ShowChart as LineFormatIcon,
+  Timeline as AreaFormatIcon,
 } from "@mui/icons-material";
 import { useState, useRef, useEffect } from "react";
 import {
   ResponsiveContainer,
   LineChart,
   Line,
+  AreaChart,
+  Area,
   BarChart,
   Bar,
+  PieChart,
+  Pie,
+  Cell,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
   CartesianGrid,
   XAxis,
   YAxis,
@@ -363,6 +380,14 @@ function TemplateStep({
                       <Typography variant="subtitle2" fontWeight={700}>{apiName}</Typography>
                     </Stack>
                     <Stack direction="row" spacing={0.5} alignItems="center">
+                      {visual.tier === "premium" && (
+                        <Chip
+                          icon={<PremiumIcon sx={{ fontSize: 13 }} />}
+                          label="Premium"
+                          size="small"
+                          sx={{ fontSize: 10, height: 20, bgcolor: "secondary.light", color: "#1A1204", fontWeight: 700 }}
+                        />
+                      )}
                       {score >= 0.8 && (
                         <Chip label="Recommended" size="small" color="primary" sx={{ fontSize: 10, height: 20 }} />
                       )}
@@ -396,51 +421,236 @@ function TemplateStep({
 
 // ── Step 3: Report ────────────────────────────────────────────────────────────
 
-function ReportKpiCard({ kpi }: { kpi: GeneratedReport["kpis"][number] }) {
+function ReportKpiCard({ kpi, theme }: { kpi: GeneratedReport["kpis"][number]; theme: VisualTheme }) {
+  const isDark = theme.mode === "dark";
+  const value = kpi.value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const caption = `${kpi.aggregation} of ${kpi.column}`;
+
+  if (!isDark) {
+    return <MetricTile label={kpi.label} value={value} caption={caption} accent="blue" />;
+  }
+
   return (
-    <MetricTile
-      label={kpi.label}
-      value={kpi.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-      caption={`${kpi.aggregation} of ${kpi.column}`}
-      accent="blue"
-    />
+    <Box
+      sx={{
+        border: "1px solid",
+        borderColor: alpha(theme.light, 0.18),
+        borderRadius: 2,
+        p: 2.25,
+        height: "100%",
+        bgcolor: alpha(theme.dark, 0.55),
+      }}
+    >
+      <Typography variant="overline" sx={{ color: alpha("#FFFFFF", 0.55), display: "block" }}>
+        {kpi.label}
+      </Typography>
+      <Typography
+        sx={{
+          fontFamily: '"Newsreader", Georgia, serif',
+          fontWeight: 700,
+          fontSize: 30,
+          lineHeight: 1.15,
+          color: theme.primary,
+          mt: 0.5,
+        }}
+      >
+        {value}
+      </Typography>
+      <Typography variant="caption" sx={{ color: alpha("#FFFFFF", 0.55), mt: 0.5, display: "block" }}>
+        {caption}
+      </Typography>
+    </Box>
+  );
+}
+
+// ── Extra visual formats for the deterministic (non-AI) report charts ───────
+// The backend only ever emits "line" or "bar" chart specs (categories/x +
+// series of numbers) — everything below is purely a different presentation
+// of that same data, chosen client-side, so it needs no API changes.
+
+type BarFormat = "bar" | "donut" | "ranked" | "radar";
+type LineFormat = "line" | "area";
+
+const BAR_FORMATS: { value: BarFormat; label: string; Icon: typeof BarFormatIcon }[] = [
+  { value: "bar", label: "Bar", Icon: BarFormatIcon },
+  { value: "donut", label: "Donut", Icon: DonutFormatIcon },
+  { value: "ranked", label: "Ranked list", Icon: RankedFormatIcon },
+  { value: "radar", label: "Radar", Icon: RadarFormatIcon },
+];
+
+const LINE_FORMATS: { value: LineFormat; label: string; Icon: typeof LineFormatIcon }[] = [
+  { value: "line", label: "Line", Icon: LineFormatIcon },
+  { value: "area", label: "Area", Icon: AreaFormatIcon },
+];
+
+function RankedList({ chart, colors, isDark }: { chart: ReportChart; colors: string[]; isDark: boolean }) {
+  const labels = chart.categories ?? chart.x ?? [];
+  const primarySeries = chart.series[0];
+  const rows = labels
+    .map((label, i) => ({ label, value: primarySeries?.values[i] ?? 0 }))
+    .sort((a, b) => b.value - a.value);
+  const max = Math.max(...rows.map((r) => r.value), 1);
+
+  return (
+    <Stack spacing={1.75} sx={{ px: 0.5, py: 1 }}>
+      {rows.map((row, i) => (
+        <Box key={row.label}>
+          <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.5 }}>
+            <Typography
+              variant="caption"
+              sx={{ color: isDark ? alpha("#FFFFFF", 0.78) : "text.secondary", fontWeight: 600 }}
+            >
+              {i + 1}. {row.label}
+            </Typography>
+            <Typography variant="caption" sx={{ color: isDark ? "#FFFFFF" : "text.primary", fontWeight: 700 }}>
+              {row.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </Typography>
+          </Stack>
+          <Box
+            sx={{
+              height: 6,
+              borderRadius: 3,
+              overflow: "hidden",
+              bgcolor: isDark ? alpha("#FFFFFF", 0.08) : "action.hover",
+            }}
+          >
+            <Box
+              sx={{
+                height: "100%",
+                width: `${(row.value / max) * 100}%`,
+                borderRadius: 3,
+                bgcolor: colors[i % colors.length],
+                transition: "width 400ms ease",
+              }}
+            />
+          </Box>
+        </Box>
+      ))}
+    </Stack>
   );
 }
 
 function ReportChartCard({ chart, theme }: { chart: ReportChart; theme: VisualTheme }) {
   const data = toChartData(chart);
   const colors = colorCycle(theme);
+  const isDark = theme.mode === "dark";
+  const isBarFamily = chart.type === "bar";
+  const [barFormat, setBarFormat] = useState<BarFormat>("bar");
+  const [lineFormat, setLineFormat] = useState<LineFormat>("line");
+
+  const axisColor = isDark ? alpha("#FFFFFF", 0.55) : undefined;
+  const gridColor = isDark ? alpha("#FFFFFF", 0.1) : undefined;
+  const tooltipStyle = isDark
+    ? { backgroundColor: theme.dark, border: `1px solid ${alpha("#FFFFFF", 0.12)}`, borderRadius: 8, color: "#FFFFFF" }
+    : undefined;
+  const legendStyle = isDark ? { color: "#FFFFFF" } : undefined;
+  const toggleSx = {
+    "& .MuiToggleButton-root": {
+      color: isDark ? alpha("#FFFFFF", 0.6) : undefined,
+      borderColor: isDark ? alpha("#FFFFFF", 0.16) : undefined,
+    },
+    "& .Mui-selected": {
+      color: `${theme.primary} !important`,
+      backgroundColor: isDark ? `${alpha(theme.primary, 0.18)} !important` : undefined,
+    },
+  };
 
   return (
-    <Card variant="outlined">
+    <Card
+      variant="outlined"
+      sx={isDark ? { bgcolor: alpha(theme.dark, 0.4), borderColor: alpha(theme.light, 0.16) } : undefined}
+    >
       <CardContent>
-        <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2 }}>{chart.title}</Typography>
-        <ResponsiveContainer width="100%" height={300}>
-          {chart.type === "line" ? (
-            <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="label" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              {chart.series.map((s, i) => (
-                <Line key={s.name} type="monotone" dataKey={s.name} name={s.name}
-                  stroke={colors[i % colors.length]} dot={false} />
+        <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
+          <Typography variant="subtitle1" fontWeight={700} sx={{ color: isDark ? "#FFFFFF" : "text.primary" }}>
+            {chart.title}
+          </Typography>
+          {isBarFamily ? (
+            <ToggleButtonGroup size="small" exclusive value={barFormat}
+              onChange={(_, v: BarFormat | null) => v && setBarFormat(v)} sx={toggleSx}>
+              {BAR_FORMATS.map(({ value, label, Icon }) => (
+                <ToggleButton key={value} value={value} aria-label={label}>
+                  <Icon sx={{ fontSize: 16 }} />
+                </ToggleButton>
               ))}
-            </LineChart>
+            </ToggleButtonGroup>
           ) : (
-            <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="label" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              {chart.series.map((s, i) => (
-                <Bar key={s.name} dataKey={s.name} name={s.name} fill={colors[i % colors.length]} />
+            <ToggleButtonGroup size="small" exclusive value={lineFormat}
+              onChange={(_, v: LineFormat | null) => v && setLineFormat(v)} sx={toggleSx}>
+              {LINE_FORMATS.map(({ value, label, Icon }) => (
+                <ToggleButton key={value} value={value} aria-label={label}>
+                  <Icon sx={{ fontSize: 16 }} />
+                </ToggleButton>
               ))}
-            </BarChart>
+            </ToggleButtonGroup>
           )}
-        </ResponsiveContainer>
+        </Stack>
+
+        {isBarFamily && barFormat === "ranked" ? (
+          <RankedList chart={chart} colors={colors} isDark={isDark} />
+        ) : (
+          <ResponsiveContainer width="100%" height={300}>
+            {!isBarFamily ? (
+              lineFormat === "area" ? (
+                <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                  <XAxis dataKey="label" tick={axisColor ? { fill: axisColor } : undefined} />
+                  <YAxis tick={axisColor ? { fill: axisColor } : undefined} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend wrapperStyle={legendStyle} />
+                  {chart.series.map((s, i) => (
+                    <Area key={s.name} type="monotone" dataKey={s.name} name={s.name}
+                      stroke={colors[i % colors.length]} fill={colors[i % colors.length]} fillOpacity={0.25} />
+                  ))}
+                </AreaChart>
+              ) : (
+                <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                  <XAxis dataKey="label" tick={axisColor ? { fill: axisColor } : undefined} />
+                  <YAxis tick={axisColor ? { fill: axisColor } : undefined} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend wrapperStyle={legendStyle} />
+                  {chart.series.map((s, i) => (
+                    <Line key={s.name} type="monotone" dataKey={s.name} name={s.name}
+                      stroke={colors[i % colors.length]} dot={false} />
+                  ))}
+                </LineChart>
+              )
+            ) : barFormat === "donut" ? (
+              <PieChart>
+                <Pie data={data} dataKey={chart.series[0]?.name} nameKey="label"
+                  innerRadius="55%" outerRadius="85%" paddingAngle={2}>
+                  {data.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
+                </Pie>
+                <Tooltip contentStyle={tooltipStyle} />
+                <Legend wrapperStyle={legendStyle} />
+              </PieChart>
+            ) : barFormat === "radar" ? (
+              <RadarChart data={data}>
+                <PolarGrid stroke={gridColor} />
+                <PolarAngleAxis dataKey="label" tick={{ fill: axisColor ?? "#666", fontSize: 11 }} />
+                <PolarRadiusAxis tick={{ fill: axisColor ?? "#666", fontSize: 10 }} />
+                {chart.series.map((s, i) => (
+                  <Radar key={s.name} dataKey={s.name} name={s.name}
+                    stroke={colors[i % colors.length]} fill={colors[i % colors.length]} fillOpacity={0.25} />
+                ))}
+                <Tooltip contentStyle={tooltipStyle} />
+                <Legend wrapperStyle={legendStyle} />
+              </RadarChart>
+            ) : (
+              <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                <XAxis dataKey="label" tick={axisColor ? { fill: axisColor } : undefined} />
+                <YAxis tick={axisColor ? { fill: axisColor } : undefined} />
+                <Tooltip contentStyle={tooltipStyle} />
+                <Legend wrapperStyle={legendStyle} />
+                {chart.series.map((s, i) => (
+                  <Bar key={s.name} dataKey={s.name} name={s.name} fill={colors[i % colors.length]} />
+                ))}
+              </BarChart>
+            )}
+          </ResponsiveContainer>
+        )}
       </CardContent>
     </Card>
   );
@@ -521,21 +731,29 @@ function ReportResultsStep({
         </Alert>
       )}
 
-      {report.kpis.length > 0 && (
-        <Grid container spacing={2} sx={{ mb: 3 }}>
-          {report.kpis.map((kpi) => (
-            <Grid key={kpi.label} size={{ xs: 12, sm: 6, md: 3 }}>
-              <ReportKpiCard kpi={kpi} />
-            </Grid>
-          ))}
-        </Grid>
-      )}
+      <Box
+        sx={
+          theme.mode === "dark"
+            ? { bgcolor: theme.bg, borderRadius: 3, p: { xs: 2, md: 3 } }
+            : undefined
+        }
+      >
+        {report.kpis.length > 0 && (
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            {report.kpis.map((kpi) => (
+              <Grid key={kpi.label} size={{ xs: 12, sm: 6, md: 3 }}>
+                <ReportKpiCard kpi={kpi} theme={theme} />
+              </Grid>
+            ))}
+          </Grid>
+        )}
 
-      <Stack spacing={2}>
-        {report.charts.map((chart) => (
-          <ReportChartCard key={chart.title} chart={chart} theme={theme} />
-        ))}
-      </Stack>
+        <Stack spacing={2}>
+          {report.charts.map((chart) => (
+            <ReportChartCard key={chart.title} chart={chart} theme={theme} />
+          ))}
+        </Stack>
+      </Box>
     </Box>
   );
 }
