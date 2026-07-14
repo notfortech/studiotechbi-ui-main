@@ -29,6 +29,22 @@ const SLATE_TEXT = '#5B6472';
 const PAPER_BG = '#F6F7F8';
 const DIVIDER = '#E3E6EA';
 
+// Two-accent emphasis system, used for italic serif "highlight" spans in
+// headlines and for the big numerals on stat/metric tiles — NOT the app's
+// primary palette, spent narrowly and meaningfully. These are the exact
+// same hexes TrustBadge already uses for "ai" (violet) and "deterministic"
+// (blue), so an italic blue word in a headline and the blue trust badge
+// both mean the same thing: a real, deterministic figure.
+export const ACCENT_BLUE = '#1668A0';
+export const ACCENT_VIOLET = '#6B5CE7';
+
+// Warm off-white used for surfaces that would otherwise be stark white --
+// the sign-in card body, and anywhere else that wants a section-to-section
+// shift away from the app's usual cool paper background.
+export const CREAM = '#FAF6EC';
+
+export { NAVY, BRASS, INK_TEXT, SLATE_TEXT, DIVIDER };
+
 export const theme = createTheme({
   palette: {
     primary: {
@@ -104,8 +120,13 @@ export const theme = createTheme({
         root: {
           textTransform: 'none',
           fontWeight: 600,
-          borderRadius: 7,
-          paddingInline: 18,
+          borderRadius: 999,
+          paddingInline: 22,
+          paddingBlock: 9,
+        },
+        sizeSmall: {
+          paddingInline: 16,
+          paddingBlock: 6,
         },
         containedPrimary: {
           boxShadow: `0 1px 2px ${alpha(NAVY[900], 0.1)}, 0 6px 14px ${alpha(NAVY[900], 0.14)}`,
