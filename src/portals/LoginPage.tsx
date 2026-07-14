@@ -13,10 +13,12 @@ import {
   Tabs,
   Tab,
 } from '@mui/material';
-import { Visibility, VisibilityOff, Business } from '@mui/icons-material';
+import { Visibility, VisibilityOff } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { APP_NAME, ROUTES } from '../core/constants';
+import { ROUTES } from '../core/constants';
+import { Logo } from '../components/common/Logo';
+import { NAVY, CREAM } from '../theme';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -87,7 +89,7 @@ export const LoginPage = () => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+        background: `linear-gradient(135deg, ${NAVY[600]} 0%, ${NAVY[900]} 100%)`,
       }}
     >
       <Container maxWidth="sm">
@@ -100,36 +102,20 @@ export const LoginPage = () => {
         >
           <Box
             sx={{
-              background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-              p: 4,
+              background: `linear-gradient(135deg, ${NAVY[600]} 0%, ${NAVY[900]} 100%)`,
+              p: 5,
               textAlign: 'center',
-              color: 'white',
             }}
           >
-            <Box
-              sx={{
-                width: 64,
-                height: 64,
-                borderRadius: '50%',
-                background: 'rgba(255, 255, 255, 0.1)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                mx: 'auto',
-                mb: 2,
-              }}
-            >
-              <Business sx={{ fontSize: 32 }} />
+            <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2.5 }}>
+              <Logo size={64} textColor="#FFFFFF" />
             </Box>
-            <Typography variant="h4" component="h1" fontWeight={700} gutterBottom>
-              {APP_NAME}
-            </Typography>
-            <Typography variant="body2" sx={{ opacity: 0.8 }}>
+            <Typography variant="body1" sx={{ opacity: 0.78, color: 'white' }}>
               Your Trusted Reporting Partner
             </Typography>
           </Box>
 
-          <CardContent sx={{ p: 4 }}>
+          <CardContent sx={{ p: 4, bgcolor: CREAM }}>
             <Tabs
               value={tabValue}
               onChange={handleTabChange}

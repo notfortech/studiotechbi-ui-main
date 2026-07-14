@@ -37,6 +37,12 @@ const DIVIDER = '#E3E6EA';
 // both mean the same thing: a real, deterministic figure.
 export const ACCENT_BLUE = '#1668A0';
 export const ACCENT_VIOLET = '#6B5CE7';
+
+// Warm off-white used for surfaces that would otherwise be stark white --
+// the sign-in card body, and anywhere else that wants a section-to-section
+// shift away from the app's usual cool paper background.
+export const CREAM = '#FAF6EC';
+
 export { NAVY, BRASS, INK_TEXT, SLATE_TEXT, DIVIDER };
 
 export const theme = createTheme({

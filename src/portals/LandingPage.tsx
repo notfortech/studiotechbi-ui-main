@@ -22,13 +22,13 @@ import {
   Paper,
 } from "@mui/material";
 import {
-  BarChart as BarChartIcon,
   TrendingUp,
   Login as LoginIcon,
   AutoAwesome as AutoAwesomeIcon,
 } from "@mui/icons-material";
 import { Link as RouterLink } from "react-router-dom";
 import { ROUTES } from "../core/constants";
+import { Logo } from "../components/common/Logo";
 
 const VALUE_STATS = [
   { label: "Faster decisions", value: "Data at a glance" },
@@ -101,20 +101,9 @@ export function LandingPage() {
           borderBottom: `1px solid ${alpha("#fff", 0.08)}`,
         }}
       >
-        <Toolbar disableGutters sx={{ px: { xs: 2, md: 3 }, py: 1 }}>
-          <Box
-            sx={{ display: "flex", alignItems: "center", gap: 1.5, flex: 1 }}
-          >
-            <BarChartIcon sx={{ fontSize: 28, color: "primary.light" }} />
-            <Typography
-              variant="h6"
-              component="span"
-              fontWeight={700}
-              letterSpacing="-0.02em"
-              sx={{ color: "white" }}
-            >
-              Studi0Tech BI
-            </Typography>
+        <Toolbar disableGutters sx={{ px: { xs: 2, md: 3 }, py: 1.5 }}>
+          <Box sx={{ flex: 1 }}>
+            <Logo size={38} textColor="#FFFFFF" />
           </Box>
           <Stack direction="row" spacing={1} alignItems="center">
             <Button
@@ -437,9 +426,9 @@ export function LandingPage() {
             spacing={3}
           >
             <Box sx={{ textAlign: { xs: "center", sm: "left" } }}>
-              <Typography variant="h6" fontWeight={600} gutterBottom>
-                Studi0Tech BI
-              </Typography>
+              <Box sx={{ mb: 1, display: "inline-flex" }}>
+                <Logo size={32} textColor="#FFFFFF" />
+              </Box>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>
                 Analytics and Reporting Platform Partner · India · Australia ·
                 New Zealand
@@ -492,7 +481,7 @@ export function LandingPage() {
             variant="caption"
             sx={{ display: "block", mt: 1, opacity: 0.7, textAlign: "center" }}
           >
-            © {new Date().getFullYear()} Studi0Tech BI. All rights reserved.
+            © {new Date().getFullYear()} StudioTechBI. All rights reserved.
           </Typography>
         </Container>
       </Box>
