@@ -1,5 +1,6 @@
 import { Box, Typography } from '@mui/material';
 import { NAVY, BRASS } from '../../theme';
+import type { ClientBranding } from '../../core/clientBranding';
 
 // Ascending bars in a navy tile -- a BI/reporting mark, not a generic
 // briefcase or globe icon. Bar height/shade progression is deliberate:
@@ -22,15 +23,47 @@ export function LogoMark({ size = 40 }: { size?: number }) {
 // Two-tone wordmark -- "StudioTech" in the surrounding text colour, "BI"
 // picked out in brass, the same device the macrocoats.in reference uses
 // for its own name (MACRO in ink, COATS in red).
+//
+// `branding`, when present (premium white-label tier), replaces the mark
+// and wordmark with the client's own logo + company name -- everywhere
+// this component is used inside an authenticated session picks it up
+// automatically, with no per-screen changes needed once a real branding
+// source exists.
 export function Logo({
   size = 40,
   textColor = '#FFFFFF',
   tagline,
+  branding,
 }: {
   size?: number;
   textColor?: string;
   tagline?: string;
+  branding?: ClientBranding | null;
 }) {
+  if (branding) {
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Box
+          component="img"
+          src={branding.logoUrl}
+          alt={branding.companyName}
+          sx={{ width: size, height: size, objectFit: 'contain', borderRadius: 1.5, flexShrink: 0 }}
+        />
+        <Typography
+          sx={{
+            fontFamily: '"Newsreader", Georgia, serif',
+            fontWeight: 700,
+            fontSize: size * 0.5,
+            lineHeight: 1.1,
+            color: textColor,
+          }}
+        >
+          {branding.companyName}
+        </Typography>
+      </Box>
+    );
+  }
+
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
       <LogoMark size={size} />
