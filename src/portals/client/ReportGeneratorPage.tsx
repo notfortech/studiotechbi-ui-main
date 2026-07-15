@@ -35,6 +35,14 @@ import {
   Palette as PaletteIcon,
   Bolt as StrictIcon,
   AutoAwesome as AiModeIcon,
+  WorkspacePremium as PremiumIcon,
+  Lock as LockIcon,
+  BarChart as BarFormatIcon,
+  DonutLarge as DonutFormatIcon,
+  FormatListNumbered as RankedFormatIcon,
+  TrackChanges as RadarFormatIcon,
+  ShowChart as LineFormatIcon,
+  Timeline as AreaFormatIcon,
   SmartToy as AiConsentIcon,
 } from "@mui/icons-material";
 import { useState, useRef, useEffect } from "react";
@@ -43,8 +51,18 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
+  AreaChart,
+  Area,
   BarChart,
   Bar,
+  PieChart,
+  Pie,
+  Cell,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
   CartesianGrid,
   XAxis,
   YAxis,
@@ -69,6 +87,7 @@ import {
   type ReportChart,
 } from "../../api/reportGeneratorApi";
 import { REPORT_THEMES, themeById, MiniReportPreview, type VisualTheme } from "./reportThemes";
+import { getCreditBalance, type CreditBalance } from "../../api/creditsApi";
 import { setPreferredThemeId } from "../../core/reportTheme";
 import { TrustBadge, type TrustBadgeKind } from "../../components/common/TrustBadge";
 import { Eyebrow } from "../../components/common/Eyebrow";
@@ -479,14 +498,44 @@ function DataModelStep({
   );
 }
 
+// ── AI credit balance — same shared ledger as Blueprint generation ─────────────
+// Plans that unlock the premium (dark dashboard) report templates. Matches the
+// plan names seeded in stbi-agenthost (Trial/Starter/Professional/Enterprise) —
+// gating is by plan tier, not a per-use credit charge, same as white-labeling.
+
+const PREMIUM_TEMPLATE_PLANS = new Set(["Professional", "Enterprise"]);
+
+function CreditBalanceBadge({ balance }: { balance: CreditBalance | null }) {
+  if (!balance || (balance.creditsRemaining === null && !balance.isUnlimited)) return null;
+
+  const low = !balance.isUnlimited && (balance.creditsRemaining ?? 0) <= 2;
+  const label = balance.isUnlimited
+    ? "Unlimited AI credits"
+    : `${balance.creditsRemaining} AI credit${balance.creditsRemaining === 1 ? "" : "s"} left`;
+
+  return (
+    <Chip
+      size="small"
+      icon={<AiModeIcon sx={{ fontSize: 14 }} />}
+      label={label}
+      sx={{
+        fontWeight: 700,
+        bgcolor: low ? "error.light" : "secondary.light",
+        color: low ? "#FFFFFF" : "#1A1204",
+      }}
+    />
+  );
+}
+
 // ── Step 2: Report Template ───────────────────────────────────────────────────
 
 function TemplateStep({
-  modelResult, selected, onSelect,
+  modelResult, selected, onSelect, planTier,
 }: {
   modelResult: GenerateReportModelResponse | null;
   selected: number | null;
   onSelect: (i: number) => void;
+  planTier: string | null;
 }) {
   const apiTemplates = modelResult?.templates;
   const themes = apiTemplates?.length
@@ -502,51 +551,69 @@ function TemplateStep({
       </Typography>
 
       <Grid container spacing={2}>
-        {themes.map(({ visual, score, apiName }, i) => (
-          <Grid key={visual.id} size={{ xs: 12, sm: 6, md: 4 }}>
-            <Card variant="outlined" sx={{
-              borderColor: selected === i ? "primary.main" : "divider",
-              borderWidth: selected === i ? 2 : 1,
-              transition: "all 0.15s",
-              height: "100%",
-            }}>
-              <CardActionArea
-                onClick={() => { onSelect(i); setPreferredThemeId(visual.id); }}
-                sx={{ height: "100%" }}
-              >
-                <CardContent sx={{ p: 2 }}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
-                    <Stack direction="row" spacing={0.75} alignItems="center">
-                      <PaletteIcon sx={{ fontSize: 16, color: visual.primary }} />
-                      <Typography variant="subtitle2" fontWeight={700}>{apiName}</Typography>
+        {themes.map(({ visual, score, apiName }, i) => {
+          const locked = visual.tier === "premium" && !!planTier && !PREMIUM_TEMPLATE_PLANS.has(planTier);
+          return (
+            <Grid key={visual.id} size={{ xs: 12, sm: 6, md: 4 }}>
+              <Card variant="outlined" sx={{
+                borderColor: selected === i ? "primary.main" : "divider",
+                borderWidth: selected === i ? 2 : 1,
+                transition: "all 0.15s",
+                height: "100%",
+                opacity: locked ? 0.6 : 1,
+              }}>
+                <CardActionArea
+                  disabled={locked}
+                  onClick={() => { onSelect(i); setPreferredThemeId(visual.id); }}
+                  sx={{ height: "100%" }}
+                >
+                  <CardContent sx={{ p: 2 }}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
+                      <Stack direction="row" spacing={0.75} alignItems="center">
+                        <PaletteIcon sx={{ fontSize: 16, color: visual.primary }} />
+                        <Typography variant="subtitle2" fontWeight={700}>{apiName}</Typography>
+                      </Stack>
+                      <Stack direction="row" spacing={0.5} alignItems="center">
+                        {visual.tier === "premium" && (
+                          <Chip
+                            icon={locked ? <LockIcon sx={{ fontSize: 13 }} /> : <PremiumIcon sx={{ fontSize: 13 }} />}
+                            label="Premium"
+                            size="small"
+                            sx={{ fontSize: 10, height: 20, bgcolor: "secondary.light", color: "#1A1204", fontWeight: 700 }}
+                          />
+                        )}
+                        {score >= 0.8 && (
+                          <Chip label="Recommended" size="small" color="primary" sx={{ fontSize: 10, height: 20 }} />
+                        )}
+                        {selected === i && <CheckCircleIcon color="primary" fontSize="small" />}
+                      </Stack>
                     </Stack>
-                    <Stack direction="row" spacing={0.5} alignItems="center">
-                      {score >= 0.8 && (
-                        <Chip label="Recommended" size="small" color="primary" sx={{ fontSize: 10, height: 20 }} />
-                      )}
-                      {selected === i && <CheckCircleIcon color="primary" fontSize="small" />}
-                    </Stack>
-                  </Stack>
-                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
-                    {visual.label}{score > 0 ? ` · match ${Math.round(score * 100)}%` : ""}
-                  </Typography>
-                  <MiniReportPreview theme={visual} />
-                  <Stack direction="row" spacing={0.5} sx={{ mt: 1.5 }}>
-                    {[visual.dark, visual.primary, visual.light, visual.bg].map((color) => (
-                      <Box key={color} sx={{
-                        width: 18, height: 18, borderRadius: "50%", bgcolor: color,
-                        border: "1px solid", borderColor: "divider",
-                      }} />
-                    ))}
-                    <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5, alignSelf: "center" }}>
-                      {visual.primary}
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
+                      {visual.label}{score > 0 ? ` · match ${Math.round(score * 100)}%` : ""}
                     </Typography>
-                  </Stack>
-                </CardContent>
-              </CardActionArea>
-            </Card>
-          </Grid>
-        ))}
+                    <MiniReportPreview theme={visual} />
+                    <Stack direction="row" spacing={0.5} sx={{ mt: 1.5 }}>
+                      {[visual.dark, visual.primary, visual.light, visual.bg].map((color) => (
+                        <Box key={color} sx={{
+                          width: 18, height: 18, borderRadius: "50%", bgcolor: color,
+                          border: "1px solid", borderColor: "divider",
+                        }} />
+                      ))}
+                      <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5, alignSelf: "center" }}>
+                        {visual.primary}
+                      </Typography>
+                    </Stack>
+                    {locked && (
+                      <Typography variant="caption" sx={{ display: "block", mt: 1, color: "warning.dark", fontWeight: 600 }}>
+                        Upgrade to Professional or Enterprise to unlock
+                      </Typography>
+                    )}
+                  </CardContent>
+                </CardActionArea>
+              </Card>
+            </Grid>
+          );
+        })}
       </Grid>
     </Box>
   );
@@ -554,51 +621,236 @@ function TemplateStep({
 
 // ── Step 3: Report ────────────────────────────────────────────────────────────
 
-function ReportKpiCard({ kpi }: { kpi: GeneratedReport["kpis"][number] }) {
+function ReportKpiCard({ kpi, theme }: { kpi: GeneratedReport["kpis"][number]; theme: VisualTheme }) {
+  const isDark = theme.mode === "dark";
+  const value = kpi.value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const caption = `${kpi.aggregation} of ${kpi.column}`;
+
+  if (!isDark) {
+    return <MetricTile label={kpi.label} value={value} caption={caption} accent="blue" />;
+  }
+
   return (
-    <MetricTile
-      label={kpi.label}
-      value={kpi.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-      caption={`${kpi.aggregation} of ${kpi.column}`}
-      accent="blue"
-    />
+    <Box
+      sx={{
+        border: "1px solid",
+        borderColor: alpha(theme.light, 0.18),
+        borderRadius: 2,
+        p: 2.25,
+        height: "100%",
+        bgcolor: alpha(theme.dark, 0.55),
+      }}
+    >
+      <Typography variant="overline" sx={{ color: alpha("#FFFFFF", 0.55), display: "block" }}>
+        {kpi.label}
+      </Typography>
+      <Typography
+        sx={{
+          fontFamily: '"Newsreader", Georgia, serif',
+          fontWeight: 700,
+          fontSize: 30,
+          lineHeight: 1.15,
+          color: theme.primary,
+          mt: 0.5,
+        }}
+      >
+        {value}
+      </Typography>
+      <Typography variant="caption" sx={{ color: alpha("#FFFFFF", 0.55), mt: 0.5, display: "block" }}>
+        {caption}
+      </Typography>
+    </Box>
+  );
+}
+
+// ── Extra visual formats for the deterministic (non-AI) report charts ───────
+// The backend only ever emits "line" or "bar" chart specs (categories/x +
+// series of numbers) — everything below is purely a different presentation
+// of that same data, chosen client-side, so it needs no API changes.
+
+type BarFormat = "bar" | "donut" | "ranked" | "radar";
+type LineFormat = "line" | "area";
+
+const BAR_FORMATS: { value: BarFormat; label: string; Icon: typeof BarFormatIcon }[] = [
+  { value: "bar", label: "Bar", Icon: BarFormatIcon },
+  { value: "donut", label: "Donut", Icon: DonutFormatIcon },
+  { value: "ranked", label: "Ranked list", Icon: RankedFormatIcon },
+  { value: "radar", label: "Radar", Icon: RadarFormatIcon },
+];
+
+const LINE_FORMATS: { value: LineFormat; label: string; Icon: typeof LineFormatIcon }[] = [
+  { value: "line", label: "Line", Icon: LineFormatIcon },
+  { value: "area", label: "Area", Icon: AreaFormatIcon },
+];
+
+function RankedList({ chart, colors, isDark }: { chart: ReportChart; colors: string[]; isDark: boolean }) {
+  const labels = chart.categories ?? chart.x ?? [];
+  const primarySeries = chart.series[0];
+  const rows = labels
+    .map((label, i) => ({ label, value: primarySeries?.values[i] ?? 0 }))
+    .sort((a, b) => b.value - a.value);
+  const max = Math.max(...rows.map((r) => r.value), 1);
+
+  return (
+    <Stack spacing={1.75} sx={{ px: 0.5, py: 1 }}>
+      {rows.map((row, i) => (
+        <Box key={row.label}>
+          <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.5 }}>
+            <Typography
+              variant="caption"
+              sx={{ color: isDark ? alpha("#FFFFFF", 0.78) : "text.secondary", fontWeight: 600 }}
+            >
+              {i + 1}. {row.label}
+            </Typography>
+            <Typography variant="caption" sx={{ color: isDark ? "#FFFFFF" : "text.primary", fontWeight: 700 }}>
+              {row.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </Typography>
+          </Stack>
+          <Box
+            sx={{
+              height: 6,
+              borderRadius: 3,
+              overflow: "hidden",
+              bgcolor: isDark ? alpha("#FFFFFF", 0.08) : "action.hover",
+            }}
+          >
+            <Box
+              sx={{
+                height: "100%",
+                width: `${(row.value / max) * 100}%`,
+                borderRadius: 3,
+                bgcolor: colors[i % colors.length],
+                transition: "width 400ms ease",
+              }}
+            />
+          </Box>
+        </Box>
+      ))}
+    </Stack>
   );
 }
 
 function ReportChartCard({ chart, theme }: { chart: ReportChart; theme: VisualTheme }) {
   const data = toChartData(chart);
   const colors = colorCycle(theme);
+  const isDark = theme.mode === "dark";
+  const isBarFamily = chart.type === "bar";
+  const [barFormat, setBarFormat] = useState<BarFormat>("bar");
+  const [lineFormat, setLineFormat] = useState<LineFormat>("line");
+
+  const axisColor = isDark ? alpha("#FFFFFF", 0.55) : undefined;
+  const gridColor = isDark ? alpha("#FFFFFF", 0.1) : undefined;
+  const tooltipStyle = isDark
+    ? { backgroundColor: theme.dark, border: `1px solid ${alpha("#FFFFFF", 0.12)}`, borderRadius: 8, color: "#FFFFFF" }
+    : undefined;
+  const legendStyle = isDark ? { color: "#FFFFFF" } : undefined;
+  const toggleSx = {
+    "& .MuiToggleButton-root": {
+      color: isDark ? alpha("#FFFFFF", 0.6) : undefined,
+      borderColor: isDark ? alpha("#FFFFFF", 0.16) : undefined,
+    },
+    "& .Mui-selected": {
+      color: `${theme.primary} !important`,
+      backgroundColor: isDark ? `${alpha(theme.primary, 0.18)} !important` : undefined,
+    },
+  };
 
   return (
-    <Card variant="outlined">
+    <Card
+      variant="outlined"
+      sx={isDark ? { bgcolor: alpha(theme.dark, 0.4), borderColor: alpha(theme.light, 0.16) } : undefined}
+    >
       <CardContent>
-        <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2 }}>{chart.title}</Typography>
-        <ResponsiveContainer width="100%" height={300}>
-          {chart.type === "line" ? (
-            <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="label" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              {chart.series.map((s, i) => (
-                <Line key={s.name} type="monotone" dataKey={s.name} name={s.name}
-                  stroke={colors[i % colors.length]} dot={false} />
+        <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
+          <Typography variant="subtitle1" fontWeight={700} sx={{ color: isDark ? "#FFFFFF" : "text.primary" }}>
+            {chart.title}
+          </Typography>
+          {isBarFamily ? (
+            <ToggleButtonGroup size="small" exclusive value={barFormat}
+              onChange={(_, v: BarFormat | null) => v && setBarFormat(v)} sx={toggleSx}>
+              {BAR_FORMATS.map(({ value, label, Icon }) => (
+                <ToggleButton key={value} value={value} aria-label={label}>
+                  <Icon sx={{ fontSize: 16 }} />
+                </ToggleButton>
               ))}
-            </LineChart>
+            </ToggleButtonGroup>
           ) : (
-            <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="label" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              {chart.series.map((s, i) => (
-                <Bar key={s.name} dataKey={s.name} name={s.name} fill={colors[i % colors.length]} />
+            <ToggleButtonGroup size="small" exclusive value={lineFormat}
+              onChange={(_, v: LineFormat | null) => v && setLineFormat(v)} sx={toggleSx}>
+              {LINE_FORMATS.map(({ value, label, Icon }) => (
+                <ToggleButton key={value} value={value} aria-label={label}>
+                  <Icon sx={{ fontSize: 16 }} />
+                </ToggleButton>
               ))}
-            </BarChart>
+            </ToggleButtonGroup>
           )}
-        </ResponsiveContainer>
+        </Stack>
+
+        {isBarFamily && barFormat === "ranked" ? (
+          <RankedList chart={chart} colors={colors} isDark={isDark} />
+        ) : (
+          <ResponsiveContainer width="100%" height={300}>
+            {!isBarFamily ? (
+              lineFormat === "area" ? (
+                <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                  <XAxis dataKey="label" tick={axisColor ? { fill: axisColor } : undefined} />
+                  <YAxis tick={axisColor ? { fill: axisColor } : undefined} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend wrapperStyle={legendStyle} />
+                  {chart.series.map((s, i) => (
+                    <Area key={s.name} type="monotone" dataKey={s.name} name={s.name}
+                      stroke={colors[i % colors.length]} fill={colors[i % colors.length]} fillOpacity={0.25} />
+                  ))}
+                </AreaChart>
+              ) : (
+                <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                  <XAxis dataKey="label" tick={axisColor ? { fill: axisColor } : undefined} />
+                  <YAxis tick={axisColor ? { fill: axisColor } : undefined} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend wrapperStyle={legendStyle} />
+                  {chart.series.map((s, i) => (
+                    <Line key={s.name} type="monotone" dataKey={s.name} name={s.name}
+                      stroke={colors[i % colors.length]} dot={false} />
+                  ))}
+                </LineChart>
+              )
+            ) : barFormat === "donut" ? (
+              <PieChart>
+                <Pie data={data} dataKey={chart.series[0]?.name} nameKey="label"
+                  innerRadius="55%" outerRadius="85%" paddingAngle={2}>
+                  {data.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
+                </Pie>
+                <Tooltip contentStyle={tooltipStyle} />
+                <Legend wrapperStyle={legendStyle} />
+              </PieChart>
+            ) : barFormat === "radar" ? (
+              <RadarChart data={data}>
+                <PolarGrid stroke={gridColor} />
+                <PolarAngleAxis dataKey="label" tick={{ fill: axisColor ?? "#666", fontSize: 11 }} />
+                <PolarRadiusAxis tick={{ fill: axisColor ?? "#666", fontSize: 10 }} />
+                {chart.series.map((s, i) => (
+                  <Radar key={s.name} dataKey={s.name} name={s.name}
+                    stroke={colors[i % colors.length]} fill={colors[i % colors.length]} fillOpacity={0.25} />
+                ))}
+                <Tooltip contentStyle={tooltipStyle} />
+                <Legend wrapperStyle={legendStyle} />
+              </RadarChart>
+            ) : (
+              <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                <XAxis dataKey="label" tick={axisColor ? { fill: axisColor } : undefined} />
+                <YAxis tick={axisColor ? { fill: axisColor } : undefined} />
+                <Tooltip contentStyle={tooltipStyle} />
+                <Legend wrapperStyle={legendStyle} />
+                {chart.series.map((s, i) => (
+                  <Bar key={s.name} dataKey={s.name} name={s.name} fill={colors[i % colors.length]} />
+                ))}
+              </BarChart>
+            )}
+          </ResponsiveContainer>
+        )}
       </CardContent>
     </Card>
   );
@@ -679,21 +931,29 @@ function ReportResultsStep({
         </Alert>
       )}
 
-      {report.kpis.length > 0 && (
-        <Grid container spacing={2} sx={{ mb: 3 }}>
-          {report.kpis.map((kpi) => (
-            <Grid key={kpi.label} size={{ xs: 12, sm: 6, md: 3 }}>
-              <ReportKpiCard kpi={kpi} />
-            </Grid>
-          ))}
-        </Grid>
-      )}
+      <Box
+        sx={
+          theme.mode === "dark"
+            ? { bgcolor: theme.bg, borderRadius: 3, p: { xs: 2, md: 3 } }
+            : undefined
+        }
+      >
+        {report.kpis.length > 0 && (
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            {report.kpis.map((kpi) => (
+              <Grid key={kpi.label} size={{ xs: 12, sm: 6, md: 3 }}>
+                <ReportKpiCard kpi={kpi} theme={theme} />
+              </Grid>
+            ))}
+          </Grid>
+        )}
 
-      <Stack spacing={2}>
-        {report.charts.map((chart) => (
-          <ReportChartCard key={chart.title} chart={chart} theme={theme} />
-        ))}
-      </Stack>
+        <Stack spacing={2}>
+          {report.charts.map((chart) => (
+            <ReportChartCard key={chart.title} chart={chart} theme={theme} />
+          ))}
+        </Stack>
+      </Box>
     </Box>
   );
 }
@@ -794,6 +1054,15 @@ export function ReportGeneratorPage() {
   const [reportGenerating, setReportGenerating] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  const [creditBalance, setCreditBalance] = useState<CreditBalance | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getCreditBalance()
+      .then((b) => { if (!cancelled) setCreditBalance(b); })
+      .catch(() => { /* fail silent — a balance widget shouldn't block the page */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const steps = STEPS_BY_MODE[mode];
   const activeIndex = steps.findIndex((s) => s.key === flowStep);
@@ -988,7 +1257,10 @@ export function ReportGeneratorPage() {
               <Accent kind="blue">deterministic engine</Accent>, never <Accent kind="violet">AI</Accent>.
             </Typography>
           </Box>
-          <TrustBadge kind={badgeKind} />
+          <Stack direction="row" spacing={1} alignItems="center">
+            {mode === "ai" && <CreditBalanceBadge balance={creditBalance} />}
+            <TrustBadge kind={badgeKind} />
+          </Stack>
         </Stack>
 
         <Stepper activeStep={activeIndex} sx={{ mb: 4 }}>
@@ -1024,7 +1296,12 @@ export function ReportGeneratorPage() {
 
         {flowStep === "template" && (
           <>
-            <TemplateStep modelResult={modelResult} selected={selectedTheme} onSelect={setSelectedTheme} />
+            <TemplateStep
+              modelResult={modelResult}
+              selected={selectedTheme}
+              onSelect={setSelectedTheme}
+              planTier={creditBalance?.subscriptionPlan ?? null}
+            />
             {reportError && <Alert severity="error" sx={{ mt: 2 }}>{reportError}</Alert>}
           </>
         )}

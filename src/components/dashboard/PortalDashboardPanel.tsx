@@ -32,7 +32,36 @@ import {
   Tooltip,
   Legend,
 } from 'recharts';
+import { useEffect, useState } from 'react';
 import type { PortalDashboardResponse } from '../../services/userDashboardService';
+import { ACCENT_BLUE, ACCENT_VIOLET, BRASS, NAVY } from '../../theme';
+
+// Entrance choreography for the dashboard shell — cards rise into place in
+// sequence rather than popping in all at once, and KPI figures count up
+// from zero instead of appearing as a static final number.
+const fadeUpKeyframes = {
+  '@keyframes dashFadeUp': {
+    from: { opacity: 0, transform: 'translateY(14px)' },
+    to: { opacity: 1, transform: 'translateY(0)' },
+  },
+};
+
+function useCountUp(target: number, durationMs = 900): number {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    let frame: number;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / durationMs);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setValue(target * eased);
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [target, durationMs]);
+  return value;
+}
 
 function formatMonthTick(month: string): string {
   const [y, m] = month.split('-');
@@ -80,28 +109,42 @@ function copyForDashboard(
 
 interface StatCardProps {
   title: string;
-  value: string;
+  rawValue: number;
+  formatter: (n: number) => string;
   icon: React.ReactNode;
   color: string;
+  delay: number;
 }
 
-const StatCard = ({ title, value, icon, color }: StatCardProps) => (
-  <Card sx={{ height: '100%' }}>
-    <CardContent>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-        <Box>
-          <Typography variant="body2" color="text.secondary" gutterBottom>
-            {title}
-          </Typography>
-          <Typography variant="h4" fontWeight={600}>
-            {value}
-          </Typography>
+const StatCard = ({ title, rawValue, formatter, icon, color, delay }: StatCardProps) => {
+  const animated = useCountUp(rawValue);
+  return (
+    <Card
+      sx={{
+        height: '100%',
+        opacity: 0,
+        animation: `dashFadeUp 520ms ease ${delay}ms forwards`,
+        transition: 'transform 200ms ease, box-shadow 200ms ease',
+        '&:hover': { transform: 'translateY(-3px)' },
+        ...fadeUpKeyframes,
+      }}
+    >
+      <CardContent>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+          <Box>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              {title}
+            </Typography>
+            <Typography variant="h4" fontWeight={600}>
+              {formatter(animated)}
+            </Typography>
+          </Box>
+          <Avatar sx={{ bgcolor: color, width: 56, height: 56 }}>{icon}</Avatar>
         </Box>
-        <Avatar sx={{ bgcolor: color, width: 56, height: 56 }}>{icon}</Avatar>
-      </Box>
-    </CardContent>
-  </Card>
-);
+      </CardContent>
+    </Card>
+  );
+};
 
 const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1);
 
@@ -138,29 +181,31 @@ export function PortalDashboardPanel({
       ? [
           {
             title: copy.balanceLabel,
-            value: formatCurrency(kpis.totalBalance),
+            rawValue: kpis.totalBalance,
+            formatter: formatCurrency,
             icon: <AccountBalance />,
-            color: '#4caf50',
+            color: ACCENT_BLUE,
           },
           {
             title: 'Active reports',
-            value: String(kpis.activeReports),
+            rawValue: kpis.activeReports,
+            formatter: (n: number) => String(Math.round(n)),
             icon: <Assessment />,
-            color: '#2196f3',
+            color: BRASS[500],
           },
           {
             title: 'Propositions',
-            value: String(kpis.propositions),
+            rawValue: kpis.propositions,
+            formatter: (n: number) => String(Math.round(n)),
             icon: <Description />,
-            color: '#ff9800',
+            color: ACCENT_VIOLET,
           },
           {
             title: copy.growthLabel,
-            value: `${Number(kpis.growthRate).toLocaleString(undefined, {
-              maximumFractionDigits: 1,
-            })}%`,
+            rawValue: Number(kpis.growthRate),
+            formatter: (n: number) => `${n.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`,
             icon: <TrendingUp />,
-            color: '#9c27b0',
+            color: NAVY[500],
           },
         ]
       : [];
@@ -239,7 +284,7 @@ export function PortalDashboardPanel({
           >
             {stats.map((stat, index) => (
               <Box key={index} sx={{ minWidth: 0 }}>
-                <StatCard {...stat} />
+                <StatCard {...stat} delay={index * 90} />
               </Box>
             ))}
           </Box>
@@ -251,7 +296,15 @@ export function PortalDashboardPanel({
               gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 2fr) minmax(0, 1fr)' },
             }}
           >
-            <Paper sx={{ p: 3, minHeight: 380 }}>
+            <Paper
+              sx={{
+                p: 3,
+                minHeight: 380,
+                opacity: 0,
+                animation: 'dashFadeUp 560ms ease 380ms forwards',
+                ...fadeUpKeyframes,
+              }}
+            >
               <Typography variant="h6" fontWeight={600} gutterBottom>
                 {copy.chartTitle}
               </Typography>
@@ -300,7 +353,15 @@ export function PortalDashboardPanel({
               )}
             </Paper>
 
-            <Paper sx={{ p: 3, minHeight: 380 }}>
+            <Paper
+              sx={{
+                p: 3,
+                minHeight: 380,
+                opacity: 0,
+                animation: 'dashFadeUp 560ms ease 460ms forwards',
+                ...fadeUpKeyframes,
+              }}
+            >
               <Typography variant="h6" fontWeight={600} gutterBottom>
                 Quick actions
               </Typography>

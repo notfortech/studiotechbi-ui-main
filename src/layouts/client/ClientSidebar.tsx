@@ -39,6 +39,12 @@ const navigationItems: NavigationItem[] = [
 const INACTIVE_TEXT = alpha('#FFFFFF', 0.7);
 const ACCENT = '#C99C55'; // brass — the one accent this dark surface gets
 
+// Floating-panel geometry: the drawer no longer runs flush edge-to-edge —
+// it's inset from the viewport on three sides so it reads as a distinct
+// card rather than a structural rectangle bolted to the window.
+const SIDEBAR_INSET = 16;
+const SIDEBAR_TOP_OFFSET = 84;
+
 export const ClientSidebar = ({ open }: ClientSidebarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -60,19 +66,27 @@ export const ClientSidebar = ({ open }: ClientSidebarProps) => {
             duration: theme.transitions.duration.leavingScreen,
           }),
         '& .MuiDrawer-paper': {
-          width: open ? DRAWER_WIDTH : 0,
+          width: open ? DRAWER_WIDTH - SIDEBAR_INSET : 0,
           boxSizing: 'border-box',
           overflowX: 'hidden',
+          overflowY: 'auto',
+          top: SIDEBAR_TOP_OFFSET,
+          left: SIDEBAR_INSET,
+          bottom: SIDEBAR_INSET,
+          height: `calc(100% - ${SIDEBAR_TOP_OFFSET + SIDEBAR_INSET}px)`,
+          border: 'none',
+          borderRadius: 4,
+          boxShadow:
+            '0 24px 48px -20px rgba(13, 21, 38, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05)',
           transition: (theme) =>
-            theme.transitions.create('width', {
+            theme.transitions.create(['width', 'opacity'], {
               easing: theme.transitions.easing.sharp,
               duration: theme.transitions.duration.leavingScreen,
             }),
         },
       }}
     >
-      <Toolbar />
-      <Box sx={{ overflow: 'auto', mt: 2.5 }}>
+      <Box sx={{ overflow: 'auto', pt: 2.5 }}>
         <Box sx={{ px: 2.5, mb: 2 }}>
           <Typography
             variant="overline"

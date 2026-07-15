@@ -15,6 +15,8 @@ import {
 import { useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { DRAWER_WIDTH } from '../../core/constants';
+import { Logo } from '../../components/common/Logo';
+import { useClientBranding } from '../../core/clientBranding';
 
 interface ClientTopBarProps {
   open: boolean;
@@ -23,6 +25,7 @@ interface ClientTopBarProps {
 
 export const ClientTopBar = ({ open, onToggleDrawer }: ClientTopBarProps) => {
   const { user, logout } = useAuth();
+  const branding = useClientBranding();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   const handleMenu = (event: React.MouseEvent<HTMLElement>) => {
@@ -64,14 +67,14 @@ export const ClientTopBar = ({ open, onToggleDrawer }: ClientTopBarProps) => {
         >
           <MenuIcon />
         </IconButton>
-        <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-          Client Portal
+        <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Logo size={30} textColor="#FFFFFF" branding={branding} />
           {user?.clientCode && (
-            <Typography component="span" variant="body2" sx={{ ml: 1.5, opacity: 0.9 }}>
+            <Typography component="span" variant="body2" sx={{ opacity: 0.85 }}>
               — {user.clientName || user.clientCode}
             </Typography>
           )}
-        </Typography>
+        </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Typography variant="body2">{user?.name}</Typography>
           <IconButton

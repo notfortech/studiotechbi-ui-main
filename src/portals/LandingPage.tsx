@@ -149,7 +149,19 @@ export function LandingPage() {
         }}
       >
         <Container maxWidth="lg">
-          <Box sx={{ textAlign: "center", maxWidth: 720, mx: "auto" }}>
+          <Box
+            sx={{
+              textAlign: "center",
+              maxWidth: 720,
+              mx: "auto",
+              opacity: 0,
+              animation: "heroFadeUp 640ms ease 80ms forwards",
+              "@keyframes heroFadeUp": {
+                from: { opacity: 0, transform: "translateY(18px)" },
+                to: { opacity: 1, transform: "translateY(0)" },
+              },
+            }}
+          >
             <Chip
               label="Analytics & Reporting Partner"
               size="small"
@@ -198,7 +210,7 @@ export function LandingPage() {
             justifyContent="center"
             sx={{ mb: 2 }}
           >
-            {VALUE_STATS.map(({ label, value }) => (
+            {VALUE_STATS.map(({ label, value }, i) => (
               <Grid key={label} size={{ xs: 12, sm: 4 }}>
                 <Card
                   variant="outlined"
@@ -206,6 +218,14 @@ export function LandingPage() {
                     height: "100%",
                     borderColor: alpha(primaryMain, 0.2),
                     bgcolor: alpha(primaryMain, 0.03),
+                    opacity: 0,
+                    animation: `heroFadeUp 560ms ease ${240 + i * 100}ms forwards`,
+                    transition: "transform 200ms ease",
+                    "&:hover": { transform: "translateY(-3px)" },
+                    "@keyframes heroFadeUp": {
+                      from: { opacity: 0, transform: "translateY(14px)" },
+                      to: { opacity: 1, transform: "translateY(0)" },
+                    },
                   }}
                 >
                   <CardContent sx={{ textAlign: "center", py: 2.5 }}>
