@@ -31,6 +31,7 @@ import {
   Bolt as StrictIcon,
   AutoAwesome as AiModeIcon,
   WorkspacePremium as PremiumIcon,
+  Lock as LockIcon,
   BarChart as BarFormatIcon,
   DonutLarge as DonutFormatIcon,
   FormatListNumbered as RankedFormatIcon,
@@ -75,6 +76,7 @@ import {
   type ReportChart,
 } from "../../api/reportGeneratorApi";
 import { REPORT_THEMES, themeById, MiniReportPreview, type VisualTheme } from "./reportThemes";
+import { getCreditBalance, type CreditBalance } from "../../api/creditsApi";
 import { setPreferredThemeId } from "../../core/reportTheme";
 import { TrustBadge, type TrustBadgeKind } from "../../components/common/TrustBadge";
 import { Eyebrow } from "../../components/common/Eyebrow";
@@ -338,14 +340,44 @@ function DataModelStep({
   );
 }
 
+// ── AI credit balance — same shared ledger as Blueprint generation ─────────────
+// Plans that unlock the premium (dark dashboard) report templates. Matches the
+// plan names seeded in stbi-agenthost (Trial/Starter/Professional/Enterprise) —
+// gating is by plan tier, not a per-use credit charge, same as white-labeling.
+
+const PREMIUM_TEMPLATE_PLANS = new Set(["Professional", "Enterprise"]);
+
+function CreditBalanceBadge({ balance }: { balance: CreditBalance | null }) {
+  if (!balance || (balance.creditsRemaining === null && !balance.isUnlimited)) return null;
+
+  const low = !balance.isUnlimited && (balance.creditsRemaining ?? 0) <= 2;
+  const label = balance.isUnlimited
+    ? "Unlimited AI credits"
+    : `${balance.creditsRemaining} AI credit${balance.creditsRemaining === 1 ? "" : "s"} left`;
+
+  return (
+    <Chip
+      size="small"
+      icon={<AiModeIcon sx={{ fontSize: 14 }} />}
+      label={label}
+      sx={{
+        fontWeight: 700,
+        bgcolor: low ? "error.light" : "secondary.light",
+        color: low ? "#FFFFFF" : "#1A1204",
+      }}
+    />
+  );
+}
+
 // ── Step 2: Report Template ───────────────────────────────────────────────────
 
 function TemplateStep({
-  modelResult, selected, onSelect,
+  modelResult, selected, onSelect, planTier,
 }: {
   modelResult: GenerateReportModelResponse | null;
   selected: number | null;
   onSelect: (i: number) => void;
+  planTier: string | null;
 }) {
   const apiTemplates = modelResult?.templates;
   const themes = apiTemplates?.length
@@ -361,59 +393,69 @@ function TemplateStep({
       </Typography>
 
       <Grid container spacing={2}>
-        {themes.map(({ visual, score, apiName }, i) => (
-          <Grid key={visual.id} size={{ xs: 12, sm: 6, md: 4 }}>
-            <Card variant="outlined" sx={{
-              borderColor: selected === i ? "primary.main" : "divider",
-              borderWidth: selected === i ? 2 : 1,
-              transition: "all 0.15s",
-              height: "100%",
-            }}>
-              <CardActionArea
-                onClick={() => { onSelect(i); setPreferredThemeId(visual.id); }}
-                sx={{ height: "100%" }}
-              >
-                <CardContent sx={{ p: 2 }}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
-                    <Stack direction="row" spacing={0.75} alignItems="center">
-                      <PaletteIcon sx={{ fontSize: 16, color: visual.primary }} />
-                      <Typography variant="subtitle2" fontWeight={700}>{apiName}</Typography>
+        {themes.map(({ visual, score, apiName }, i) => {
+          const locked = visual.tier === "premium" && !!planTier && !PREMIUM_TEMPLATE_PLANS.has(planTier);
+          return (
+            <Grid key={visual.id} size={{ xs: 12, sm: 6, md: 4 }}>
+              <Card variant="outlined" sx={{
+                borderColor: selected === i ? "primary.main" : "divider",
+                borderWidth: selected === i ? 2 : 1,
+                transition: "all 0.15s",
+                height: "100%",
+                opacity: locked ? 0.6 : 1,
+              }}>
+                <CardActionArea
+                  disabled={locked}
+                  onClick={() => { onSelect(i); setPreferredThemeId(visual.id); }}
+                  sx={{ height: "100%" }}
+                >
+                  <CardContent sx={{ p: 2 }}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
+                      <Stack direction="row" spacing={0.75} alignItems="center">
+                        <PaletteIcon sx={{ fontSize: 16, color: visual.primary }} />
+                        <Typography variant="subtitle2" fontWeight={700}>{apiName}</Typography>
+                      </Stack>
+                      <Stack direction="row" spacing={0.5} alignItems="center">
+                        {visual.tier === "premium" && (
+                          <Chip
+                            icon={locked ? <LockIcon sx={{ fontSize: 13 }} /> : <PremiumIcon sx={{ fontSize: 13 }} />}
+                            label="Premium"
+                            size="small"
+                            sx={{ fontSize: 10, height: 20, bgcolor: "secondary.light", color: "#1A1204", fontWeight: 700 }}
+                          />
+                        )}
+                        {score >= 0.8 && (
+                          <Chip label="Recommended" size="small" color="primary" sx={{ fontSize: 10, height: 20 }} />
+                        )}
+                        {selected === i && <CheckCircleIcon color="primary" fontSize="small" />}
+                      </Stack>
                     </Stack>
-                    <Stack direction="row" spacing={0.5} alignItems="center">
-                      {visual.tier === "premium" && (
-                        <Chip
-                          icon={<PremiumIcon sx={{ fontSize: 13 }} />}
-                          label="Premium"
-                          size="small"
-                          sx={{ fontSize: 10, height: 20, bgcolor: "secondary.light", color: "#1A1204", fontWeight: 700 }}
-                        />
-                      )}
-                      {score >= 0.8 && (
-                        <Chip label="Recommended" size="small" color="primary" sx={{ fontSize: 10, height: 20 }} />
-                      )}
-                      {selected === i && <CheckCircleIcon color="primary" fontSize="small" />}
-                    </Stack>
-                  </Stack>
-                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
-                    {visual.label}{score > 0 ? ` · match ${Math.round(score * 100)}%` : ""}
-                  </Typography>
-                  <MiniReportPreview theme={visual} />
-                  <Stack direction="row" spacing={0.5} sx={{ mt: 1.5 }}>
-                    {[visual.dark, visual.primary, visual.light, visual.bg].map((color) => (
-                      <Box key={color} sx={{
-                        width: 18, height: 18, borderRadius: "50%", bgcolor: color,
-                        border: "1px solid", borderColor: "divider",
-                      }} />
-                    ))}
-                    <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5, alignSelf: "center" }}>
-                      {visual.primary}
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
+                      {visual.label}{score > 0 ? ` · match ${Math.round(score * 100)}%` : ""}
                     </Typography>
-                  </Stack>
-                </CardContent>
-              </CardActionArea>
-            </Card>
-          </Grid>
-        ))}
+                    <MiniReportPreview theme={visual} />
+                    <Stack direction="row" spacing={0.5} sx={{ mt: 1.5 }}>
+                      {[visual.dark, visual.primary, visual.light, visual.bg].map((color) => (
+                        <Box key={color} sx={{
+                          width: 18, height: 18, borderRadius: "50%", bgcolor: color,
+                          border: "1px solid", borderColor: "divider",
+                        }} />
+                      ))}
+                      <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5, alignSelf: "center" }}>
+                        {visual.primary}
+                      </Typography>
+                    </Stack>
+                    {locked && (
+                      <Typography variant="caption" sx={{ display: "block", mt: 1, color: "warning.dark", fontWeight: 600 }}>
+                        Upgrade to Professional or Enterprise to unlock
+                      </Typography>
+                    )}
+                  </CardContent>
+                </CardActionArea>
+              </Card>
+            </Grid>
+          );
+        })}
       </Grid>
     </Box>
   );
@@ -834,6 +876,15 @@ export function ReportGeneratorPage() {
   const [reportError, setReportError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  const [creditBalance, setCreditBalance] = useState<CreditBalance | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getCreditBalance()
+      .then((b) => { if (!cancelled) setCreditBalance(b); })
+      .catch(() => { /* fail silent — a balance widget shouldn't block the page */ });
+    return () => { cancelled = true; };
+  }, []);
+
   const steps = STEPS_BY_MODE[mode];
   const activeIndex = steps.findIndex((s) => s.key === flowStep);
 
@@ -946,7 +997,10 @@ export function ReportGeneratorPage() {
               <Accent kind="blue">deterministic engine</Accent>, never <Accent kind="violet">AI</Accent>.
             </Typography>
           </Box>
-          <TrustBadge kind={badgeKind} />
+          <Stack direction="row" spacing={1} alignItems="center">
+            {mode === "ai" && <CreditBalanceBadge balance={creditBalance} />}
+            <TrustBadge kind={badgeKind} />
+          </Stack>
         </Stack>
 
         <Stepper activeStep={activeIndex} sx={{ mb: 4 }}>
@@ -974,7 +1028,12 @@ export function ReportGeneratorPage() {
 
         {flowStep === "template" && (
           <>
-            <TemplateStep modelResult={modelResult} selected={selectedTheme} onSelect={setSelectedTheme} />
+            <TemplateStep
+              modelResult={modelResult}
+              selected={selectedTheme}
+              onSelect={setSelectedTheme}
+              planTier={creditBalance?.subscriptionPlan ?? null}
+            />
             {reportError && <Alert severity="error" sx={{ mt: 2 }}>{reportError}</Alert>}
           </>
         )}
