@@ -22,6 +22,11 @@ import {
   ToggleButtonGroup,
   ToggleButton,
   alpha,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from "@mui/material";
 import {
   CloudUpload as UploadIcon,
@@ -38,8 +43,10 @@ import {
   TrackChanges as RadarFormatIcon,
   ShowChart as LineFormatIcon,
   Timeline as AreaFormatIcon,
+  SmartToy as AiConsentIcon,
 } from "@mui/icons-material";
 import { useState, useRef, useEffect } from "react";
+import { useAuth } from "../../auth/AuthContext";
 import {
   ResponsiveContainer,
   LineChart,
@@ -65,10 +72,14 @@ import {
 import {
   extractSchemaFromExcel,
   generateReportModel,
+  recordAiConsent,
+  matchSchemaModel,
+  recordDataUsageConsent,
   type ExtractedSchemaDto,
   type GenerateReportModelResponse,
   type StarSchema,
   type TableInfo,
+  type ReportMatchResult,
 } from "../../api/reportDesignerApi";
 import {
   generateReport,
@@ -283,13 +294,143 @@ function StarSchemaDiagram({ starSchema, tables }: { starSchema: StarSchema; tab
   );
 }
 
+// ── Schema/model/template library match (Story 3) ────────────────────────────
+
+function SchemaModelMatchPanel({
+  matching, matchError, matchResult, dataConsentRecordedAt, dataConsentDeciding, dataConsentError, onOpenConsent,
+}: {
+  matching: boolean;
+  matchError: string | null;
+  matchResult: ReportMatchResult | null;
+  dataConsentRecordedAt: string | null;
+  dataConsentDeciding: boolean;
+  dataConsentError: string | null;
+  onOpenConsent: () => void;
+}) {
+  return (
+    <Box sx={{ mt: 4, pt: 3, borderTop: 1, borderColor: "divider" }}>
+      <Typography variant="h6" fontWeight={700} gutterBottom>Matched Report Model</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Separately, your schema is checked against our library of pre-built industry report models —
+        the model and dashboard template your report can eventually be published against.
+      </Typography>
+
+      {matchError && <Alert severity="error" sx={{ mb: 2 }}>{matchError}</Alert>}
+
+      {matching ? (
+        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ py: 2 }}>
+          <CircularProgress size={20} />
+          <Typography variant="body2" color="text.secondary">Matching against the model library…</Typography>
+        </Stack>
+      ) : matchResult?.pendingSupportReview ? (
+        <Alert severity="info">
+          No confident match in the library — the AI proposed a new model, <strong>{matchResult.schemaModelName}</strong>,
+          now pending internal review before it can be used. Check back once it's approved.
+        </Alert>
+      ) : matchResult?.schemaModelId ? (
+        <Box>
+          {matchResult.matchSource === "AiProposedNew" && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Nothing in the library was a good fit, so the AI proposed a new model and dashboard
+              template below — added to the library immediately, no review step.
+            </Alert>
+          )}
+          <Stack direction="row" spacing={1} flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
+            <Chip label={matchResult.industry || "Cross-Industry"} size="small" color="primary" />
+            <Chip
+              label={
+                matchResult.matchSource === "AiProposedNew" ? "AI-proposed (new)"
+                  : matchResult.matchSource === "AiMatched" ? "AI-matched"
+                  : "Matched"
+              }
+              size="small" variant="outlined"
+            />
+            {matchResult.matchSource !== "AiProposedNew" && (
+              <Chip label={`Confidence ${Math.round(matchResult.confidence * 100)}%`} size="small" variant="outlined" />
+            )}
+          </Stack>
+
+          <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>{matchResult.schemaModelName}</Typography>
+            <Stack spacing={0.5}>
+              {matchResult.columnMappings.map((m) => (
+                <Stack key={m.fieldName} direction="row" spacing={1.5} alignItems="center"
+                  sx={{ py: 0.75, borderBottom: "1px solid", borderColor: "divider" }}>
+                  {m.included
+                    ? <CheckCircleIcon color="success" fontSize="small" />
+                    : <Box sx={{ width: 18, height: 18, borderRadius: "50%", border: "1px solid", borderColor: "divider", flexShrink: 0 }} />}
+                  <Typography variant="body2" fontWeight={600} sx={{ minWidth: 170 }}>
+                    {m.fieldName}{m.isRequired && <Typography component="span" color="error.main"> *</Typography>}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ minWidth: 70 }}>{m.dataType}</Typography>
+                  <Typography variant="body2" color={m.included ? "text.primary" : "text.disabled"}>
+                    {m.clientColumnName ?? "— not found in your data —"}
+                  </Typography>
+                </Stack>
+              ))}
+            </Stack>
+          </Paper>
+
+          {matchResult.candidateTemplates.length > 0 && (
+            <Stack direction="row" spacing={1.5} flexWrap="wrap" gap={1.5} sx={{ mb: 3 }}>
+              {matchResult.candidateTemplates.map((t) => (
+                <Card key={t.templateId} variant="outlined" sx={{ minWidth: 220 }}>
+                  <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <PaletteIcon fontSize="small" color="primary" />
+                      <Typography variant="body2" fontWeight={700}>{t.templateName}</Typography>
+                    </Stack>
+                    <Chip
+                      label={t.isPublishReady ? "Ready to publish" : "Not yet publish-ready"}
+                      size="small" color={t.isPublishReady ? "success" : "default"}
+                      sx={{ mt: 1 }}
+                    />
+                  </CardContent>
+                </Card>
+              ))}
+            </Stack>
+          )}
+
+          {dataConsentError && <Alert severity="error" sx={{ mb: 2 }}>{dataConsentError}</Alert>}
+
+          {dataConsentRecordedAt ? (
+            <Alert severity="success">
+              Data usage consent recorded at {new Date(dataConsentRecordedAt).toLocaleTimeString()}.
+            </Alert>
+          ) : (
+            <Button
+              variant="contained"
+              onClick={onOpenConsent}
+              disabled={dataConsentDeciding}
+              startIcon={dataConsentDeciding ? <CircularProgress size={16} color="inherit" /> : undefined}
+            >
+              Confirm data usage &amp; continue
+            </Button>
+          )}
+        </Box>
+      ) : !matchError ? (
+        <Alert severity="warning">No confident match found in the model library.</Alert>
+      ) : null}
+    </Box>
+  );
+}
+
 function DataModelStep({
-  extractedSchema, modelResult, generating, generateError,
+  extractedSchema, modelResult, generating, generateError, aiDeclined,
+  matching, matchError, matchResult, dataConsentRecordedAt, dataConsentDeciding, dataConsentError, onOpenDataConsent,
 }: {
   extractedSchema: ExtractedSchemaDto;
   modelResult: GenerateReportModelResponse | null;
   generating: boolean;
   generateError: string | null;
+  aiDeclined: boolean;
+  matching: boolean;
+  matchError: string | null;
+  matchResult: ReportMatchResult | null;
+  dataConsentRecordedAt: string | null;
+  dataConsentDeciding: boolean;
+  dataConsentError: string | null;
+  onOpenDataConsent: () => void;
 }) {
   const { elapsedSeconds, pct } = useTimedProgress(generating);
 
@@ -304,7 +445,12 @@ function DataModelStep({
 
       {generateError && <Alert severity="error" sx={{ mb: 2 }}>{generateError}</Alert>}
 
-      {generating ? (
+      {aiDeclined ? (
+        <Alert severity="info">
+          AI matching was skipped, as you chose not to share your schema with it. Pick a report
+          template manually on the next step.
+        </Alert>
+      ) : generating ? (
         <Stack spacing={1.5} sx={{ py: 4 }}>
           <Stack direction="row" justifyContent="space-between" alignItems="baseline">
             <Typography variant="body2" color="text.secondary">
@@ -336,6 +482,18 @@ function DataModelStep({
           </Alert>
         </Box>
       ) : null}
+
+      {!aiDeclined && (
+        <SchemaModelMatchPanel
+          matching={matching}
+          matchError={matchError}
+          matchResult={matchResult}
+          dataConsentRecordedAt={dataConsentRecordedAt}
+          dataConsentDeciding={dataConsentDeciding}
+          dataConsentError={dataConsentError}
+          onOpenConsent={onOpenDataConsent}
+        />
+      )}
     </Box>
   );
 }
@@ -858,6 +1016,9 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
 }
 
 export function ReportGeneratorPage() {
+  const { user } = useAuth();
+  const clientId = user?.clientCode ?? "";
+
   const [mode, setMode] = useState<Mode>("strict");
   const [flowStep, setFlowStep] = useState<FlowStep>("connect");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -868,6 +1029,24 @@ export function ReportGeneratorPage() {
   const [extractError, setExtractError] = useState<string | null>(null);
   const [modelGenerating, setModelGenerating] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
+
+  // AI consent gate — shown after schema extraction, before any AI call is made.
+  const [consentDialogOpen, setConsentDialogOpen] = useState(false);
+  const [consentDeciding, setConsentDeciding] = useState(false);
+  const [aiDeclined, setAiDeclined] = useState(false);
+
+  // Schema/model/template library match (Story 3) — separate from the AI blueprint
+  // generation above; matches against the pre-built model+template repository instead
+  // of generating a brand-new custom blueprint.
+  const [matchResult, setMatchResult] = useState<ReportMatchResult | null>(null);
+  const [matching, setMatching] = useState(false);
+  const [matchError, setMatchError] = useState<string | null>(null);
+
+  // Consent #2 (data usage) — shown once a model+template match is available.
+  const [dataConsentDialogOpen, setDataConsentDialogOpen] = useState(false);
+  const [dataConsentDeciding, setDataConsentDeciding] = useState(false);
+  const [dataConsentError, setDataConsentError] = useState<string | null>(null);
+  const [dataConsentRecordedAt, setDataConsentRecordedAt] = useState<string | null>(null);
 
   const [selectedTheme, setSelectedTheme] = useState<number | null>(null);
 
@@ -902,21 +1081,97 @@ export function ReportGeneratorPage() {
       const schema = await extractSchemaFromExcel(uploadedFile);
       setExtractedSchema(schema);
       setFlowStep("model");
+      setAiDeclined(false);
 
-      setModelGenerating(true);
-      setModelError(null);
-      try {
-        const model = await generateReportModel(schema);
-        setModelResult(model);
-      } catch (err) {
-        setModelError(err instanceof Error ? err.message : "Model generation failed.");
-      } finally {
-        setModelGenerating(false);
-      }
+      // Ask before the schema is ever sent to AI — generation only starts once
+      // the user responds to the consent dialog.
+      setConsentDialogOpen(true);
     } catch (err) {
       setExtractError(err instanceof Error ? err.message : "Failed to extract schema.");
     } finally {
       setExtracting(false);
+    }
+  }
+
+  async function handleConsentDecision(granted: boolean) {
+    if (!extractedSchema) return;
+
+    setConsentDeciding(true);
+    try {
+      await recordAiConsent(clientId, extractedSchema.schemaHash, granted);
+    } catch (err) {
+      if (granted) {
+        // Can't proceed to generation without a recorded grant — the backend
+        // will reject it anyway. Surface the error and let the user retry.
+        setConsentDeciding(false);
+        setConsentDialogOpen(false);
+        setModelError(err instanceof Error ? err.message : "Failed to record consent.");
+        return;
+      }
+      // Decline is logged server-side on a best-effort basis; still honour the
+      // user's choice locally even if the request itself failed.
+    }
+
+    setConsentDeciding(false);
+    setConsentDialogOpen(false);
+
+    if (!granted) {
+      setAiDeclined(true);
+      return;
+    }
+
+    // Fire the AI blueprint generation and the model/template library match
+    // independently — a slow or failing blueprint call must not block the match.
+    void runModelGeneration();
+    void runSchemaModelMatch();
+  }
+
+  async function runModelGeneration() {
+    if (!extractedSchema) return;
+    setModelGenerating(true);
+    setModelError(null);
+    try {
+      const model = await generateReportModel(clientId, extractedSchema);
+      setModelResult(model);
+    } catch (err) {
+      setModelError(err instanceof Error ? err.message : "Model generation failed.");
+    } finally {
+      setModelGenerating(false);
+    }
+  }
+
+  async function runSchemaModelMatch() {
+    if (!extractedSchema) return;
+    setMatching(true);
+    setMatchError(null);
+    try {
+      const match = await matchSchemaModel(clientId, extractedSchema);
+      setMatchResult(match);
+    } catch (err) {
+      setMatchError(err instanceof Error ? err.message : "Failed to match against the model library.");
+    } finally {
+      setMatching(false);
+    }
+  }
+
+  function handleOpenDataConsent() {
+    setDataConsentError(null);
+    setDataConsentDialogOpen(true);
+  }
+
+  async function handleDataConsentDecision(granted: boolean) {
+    setDataConsentDialogOpen(false);
+    if (!granted || !matchResult) return;
+
+    setDataConsentDeciding(true);
+    setDataConsentError(null);
+    try {
+      const result = await recordDataUsageConsent(matchResult.draftId, clientId);
+      setDataConsentRecordedAt(result.approvedAt);
+    } catch (err) {
+      setDataConsentError(err instanceof Error ? err.message : "Failed to record data usage consent.");
+    } finally {
+      setDataConsentDeciding(false);
     }
   }
 
@@ -975,6 +1230,11 @@ export function ReportGeneratorPage() {
     setExtractError(null);
     setModelError(null);
     setReportError(null);
+    setAiDeclined(false);
+    setMatchResult(null);
+    setMatchError(null);
+    setDataConsentRecordedAt(null);
+    setDataConsentError(null);
   }
 
   const theme = REPORT_THEMES[selectedTheme ?? 0];
@@ -1023,6 +1283,14 @@ export function ReportGeneratorPage() {
             modelResult={modelResult}
             generating={modelGenerating}
             generateError={modelError}
+            aiDeclined={aiDeclined}
+            matching={matching}
+            matchError={matchError}
+            matchResult={matchResult}
+            dataConsentRecordedAt={dataConsentRecordedAt}
+            dataConsentDeciding={dataConsentDeciding}
+            dataConsentError={dataConsentError}
+            onOpenDataConsent={handleOpenDataConsent}
           />
         )}
 
@@ -1081,6 +1349,59 @@ export function ReportGeneratorPage() {
           )}
         </Stack>
       </Paper>
+
+      <Dialog open={consentDialogOpen} maxWidth="xs" fullWidth>
+        <DialogTitle>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <AiConsentIcon color="primary" />
+            <span>Use AI to analyse your data's structure?</span>
+          </Stack>
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            We'll send only your column names and data types — never the data itself — to
+            recommend the closest-matching report model and template. You can decline and
+            choose a template manually instead.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => handleConsentDecision(false)} disabled={consentDeciding}>
+            Not now
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => handleConsentDecision(true)}
+            disabled={consentDeciding}
+            startIcon={consentDeciding ? <CircularProgress size={16} color="inherit" /> : undefined}
+          >
+            Allow AI matching
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={dataConsentDialogOpen} maxWidth="xs" fullWidth>
+        <DialogTitle>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <CheckCircleIcon color="primary" />
+            <span>Use your data with this report model?</span>
+          </Stack>
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Confirming means this report will use the columns matched above. A reference to
+            this match is stored for audit and compliance purposes, retained for up to 18
+            months. This is separate from the earlier AI-matching consent.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => handleDataConsentDecision(false)}>
+            Not now
+          </Button>
+          <Button variant="contained" onClick={() => handleDataConsentDecision(true)}>
+            Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

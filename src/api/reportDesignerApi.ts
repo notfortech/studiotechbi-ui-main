@@ -59,6 +59,45 @@ export interface GenerateReportModelResponse {
   durationMs: number;
 }
 
+export interface ConsentDecisionResponse {
+  granted: boolean;
+  schemaHash: string;
+  decidedAt: string;
+}
+
+export interface ReportMatchColumnMapping {
+  fieldName: string;
+  dataType: string;
+  isRequired: boolean;
+  clientColumnName?: string | null;
+  included: boolean;
+}
+
+export interface ReportMatchCandidateTemplate {
+  templateId: string;
+  templateName: string;
+  isPublishReady: boolean;
+}
+
+export type ReportMatchSource = 'Deterministic' | 'AiMatched' | 'AiProposedNew';
+
+export interface ReportMatchResult {
+  draftId: string;
+  schemaModelId?: string | null;
+  schemaModelName?: string | null;
+  industry?: string | null;
+  confidence: number;
+  matchSource: ReportMatchSource;
+  pendingSupportReview: boolean;
+  candidateTemplates: ReportMatchCandidateTemplate[];
+  columnMappings: ReportMatchColumnMapping[];
+}
+
+export interface DataUsageConsentResult {
+  draftId: string;
+  approvedAt: string;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 interface ApiResponse<T> {
@@ -144,14 +183,75 @@ export async function extractSchemaFromSharePoint(params: {
   }
 }
 
+/**
+ * Records (or declines) consent to send this schema's column names/types — never
+ * row data — to the Report Designer AI. Must be called with granted=true before
+ * generateReportModel will succeed for the same clientId + schema.
+ */
+export async function recordAiConsent(
+  clientId: string,
+  schemaHash: string,
+  granted: boolean
+): Promise<ConsentDecisionResponse> {
+  try {
+    const res = await apiAxiosInstance.post<ApiResponse<ConsentDecisionResponse>>(
+      '/report-designer/consent',
+      { clientId, schemaHash, consentGranted: granted }
+    );
+    return extractData(res.data);
+  } catch (err) {
+    throw err instanceof Error ? err : apiError(err, 'Failed to record consent decision.');
+  }
+}
+
+/**
+ * Scores the extracted schema against the reference SchemaModel library (deterministic
+ * name-overlap first, escalating to AI semantic matching below a confidence gate) and
+ * persists the result as a ReportMatchDraft. Requires prior consent, same as generateReportModel.
+ */
+export async function matchSchemaModel(
+  clientId: string,
+  schema: ExtractedSchemaDto
+): Promise<ReportMatchResult> {
+  try {
+    const res = await apiAxiosInstance.post<ApiResponse<ReportMatchResult>>(
+      '/report-designer/match',
+      { clientId, schema }
+    );
+    return extractData(res.data);
+  } catch (err) {
+    throw err instanceof Error ? err : apiError(err, 'Failed to match schema against the model directory.');
+  }
+}
+
+/**
+ * Consent #2 — confirms the report will use this specific (matched) data. Distinct from
+ * the AI-matching consent recorded by recordAiConsent. Append-only: safe to call again.
+ */
+export async function recordDataUsageConsent(
+  draftId: string,
+  clientId: string
+): Promise<DataUsageConsentResult> {
+  try {
+    const res = await apiAxiosInstance.post<ApiResponse<DataUsageConsentResult>>(
+      `/report-designer/match/${draftId}/data-usage-consent`,
+      { clientId }
+    );
+    return extractData(res.data);
+  } catch (err) {
+    throw err instanceof Error ? err : apiError(err, 'Failed to record data usage consent.');
+  }
+}
+
 export async function generateReportModel(
+  clientId: string,
   schema: ExtractedSchemaDto,
   preferredTheme?: string
 ): Promise<GenerateReportModelResponse> {
   try {
     const res = await apiAxiosInstance.post<ApiResponse<GenerateReportModelResponse>>(
       '/report-designer/generate-model',
-      { schema, ...(preferredTheme ? { preferredTheme } : {}) }
+      { clientId, schema, ...(preferredTheme ? { preferredTheme } : {}) }
     );
     return extractData(res.data);
   } catch (err) {
