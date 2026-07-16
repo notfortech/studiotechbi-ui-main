@@ -18,6 +18,7 @@ import { PipelineMonitoringPage } from '../portals/admin/PipelineMonitoringPage'
 import { FileUploadMonitoringPage } from '../portals/admin/FileUploadMonitoringPage';
 import { DatasetRefreshLogsPage } from '../portals/admin/DatasetRefreshLogsPage';
 import { ProcessingJobsPage } from '../portals/admin/ProcessingJobsPage';
+import { SchemaModelFieldAliasesPage } from '../portals/admin/SchemaModelFieldAliasesPage';
 import { AuditLogsPage } from '../portals/admin/AuditLogsPage';
 import { SystemHealthPage } from '../portals/admin/SystemHealthPage';
 import { FunctionalLogsPage } from '../portals/admin/FunctionalLogsPage';
@@ -108,6 +109,10 @@ export const routes: RouteObject[] = [
       {
         path: 'jobs',
         element: <ProcessingJobsPage />,
+      },
+      {
+        path: 'schema-model-aliases',
+        element: <SchemaModelFieldAliasesPage />,
       },
       {
         path: 'audit-logs',

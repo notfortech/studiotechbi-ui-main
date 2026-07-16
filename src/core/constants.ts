@@ -31,6 +31,7 @@ export const ROUTES = {
     FILE_UPLOAD_MONITORING: '/admin/file-uploads',
     DATASET_REFRESH_LOGS: '/admin/dataset-refresh',
     JOBS: '/admin/jobs',
+    SCHEMA_MODEL_FIELD_ALIASES: '/admin/schema-model-aliases',
     AUDIT_LOGS: '/admin/audit-logs',
     SYSTEM_HEALTH: '/admin/system-health',
     REPORTS: '/admin/reports',
