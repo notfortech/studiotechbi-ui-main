@@ -1,5 +1,5 @@
-import { apiAxiosInstance } from '../services/apiClient';
-import { AxiosError } from 'axios';
+import { apiAxiosInstance, AI_MATCH_TIMEOUT_MS } from '../services/apiClient';
+import axios, { AxiosError } from 'axios';
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────
 
@@ -120,6 +120,29 @@ function apiError(err: unknown, fallback: string): Error {
   return new Error(body?.errors?.[0] ?? body?.message ?? fallback);
 }
 
+/** True for a client-side timeout (AI_MATCH_TIMEOUT_MS elapsed) or a caller-triggered abort. */
+function isTimeoutOrAbort(err: unknown): boolean {
+  if (!axios.isAxiosError(err)) return false;
+  return err.code === 'ECONNABORTED' || err.code === 'ERR_CANCELED';
+}
+
+const AI_TIMEOUT_MESSAGE =
+  "The AI matching service didn't respond in time. Your request may still be processing — " +
+  'try again in a minute, or continue without AI matching.';
+
+const AI_CANCELLED_MESSAGE = 'Cancelled.';
+
+/** Distinct, honest error for the AI-backed calls instead of axios's generic timeout/cancel text. */
+function aiCallError(err: unknown, fallback: string): Error {
+  if (axios.isAxiosError(err) && err.code === 'ERR_CANCELED') {
+    return new Error(AI_CANCELLED_MESSAGE);
+  }
+  if (isTimeoutOrAbort(err)) {
+    return new Error(AI_TIMEOUT_MESSAGE);
+  }
+  return err instanceof Error ? err : apiError(err, fallback);
+}
+
 // ── API calls ─────────────────────────────────────────────────────────────────
 
 export async function extractSchemaFromExcel(file: File): Promise<ExtractedSchemaDto> {
@@ -208,19 +231,24 @@ export async function recordAiConsent(
  * Scores the extracted schema against the reference SchemaModel library (deterministic
  * name-overlap first, escalating to AI semantic matching below a confidence gate) and
  * persists the result as a ReportMatchDraft. Requires prior consent, same as generateReportModel.
+ *
+ * Bounded by AI_MATCH_TIMEOUT_MS and cancellable via `signal` — the deterministic path is
+ * fast, but an AI-escalated match can take up to koru-main's own ~210s outbound budget.
  */
 export async function matchSchemaModel(
   clientId: string,
-  schema: ExtractedSchemaDto
+  schema: ExtractedSchemaDto,
+  signal?: AbortSignal
 ): Promise<ReportMatchResult> {
   try {
     const res = await apiAxiosInstance.post<ApiResponse<ReportMatchResult>>(
       '/report-designer/match',
-      { clientId, schema }
+      { clientId, schema },
+      { timeout: AI_MATCH_TIMEOUT_MS, signal }
     );
     return extractData(res.data);
   } catch (err) {
-    throw err instanceof Error ? err : apiError(err, 'Failed to match schema against the model directory.');
+    throw aiCallError(err, 'Failed to match schema against the model directory.');
   }
 }
 
@@ -243,18 +271,23 @@ export async function recordDataUsageConsent(
   }
 }
 
+/**
+ * Bounded by AI_MATCH_TIMEOUT_MS and cancellable via `signal` — see matchSchemaModel.
+ */
 export async function generateReportModel(
   clientId: string,
   schema: ExtractedSchemaDto,
-  preferredTheme?: string
+  preferredTheme?: string,
+  signal?: AbortSignal
 ): Promise<GenerateReportModelResponse> {
   try {
     const res = await apiAxiosInstance.post<ApiResponse<GenerateReportModelResponse>>(
       '/report-designer/generate-model',
-      { clientId, schema, ...(preferredTheme ? { preferredTheme } : {}) }
+      { clientId, schema, ...(preferredTheme ? { preferredTheme } : {}) },
+      { timeout: AI_MATCH_TIMEOUT_MS, signal }
     );
     return extractData(res.data);
   } catch (err) {
-    throw err instanceof Error ? err : apiError(err, 'Failed to generate report model.');
+    throw aiCallError(err, 'Failed to generate report model.');
   }
 }

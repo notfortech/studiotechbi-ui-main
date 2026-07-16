@@ -115,6 +115,12 @@ function toChartData(chart: ReportChart): Record<string, string | number>[] {
 // so this animates toward (not past) an asymptote over the expected
 // duration rather than sitting on an indeterminate spinner for 1-3 minutes.
 // It never claims to be finished before the real response arrives.
+//
+// Past AI_HARD_CEILING_SECONDS the call is genuinely taking longer than the
+// client-side timeout (AI_MATCH_TIMEOUT_MS in apiClient.ts) allows for, so
+// the caller should stop trusting this animation and offer a way out.
+
+const AI_HARD_CEILING_SECONDS = 220;
 
 function useTimedProgress(active: boolean, timeConstantSeconds = 55, cap = 92) {
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -418,6 +424,7 @@ function SchemaModelMatchPanel({
 function DataModelStep({
   extractedSchema, modelResult, generating, generateError, aiDeclined,
   matching, matchError, matchResult, dataConsentRecordedAt, dataConsentDeciding, dataConsentError, onOpenDataConsent,
+  onCancelGeneration,
 }: {
   extractedSchema: ExtractedSchemaDto;
   modelResult: GenerateReportModelResponse | null;
@@ -431,8 +438,10 @@ function DataModelStep({
   dataConsentDeciding: boolean;
   dataConsentError: string | null;
   onOpenDataConsent: () => void;
+  onCancelGeneration: () => void;
 }) {
   const { elapsedSeconds, pct } = useTimedProgress(generating);
+  const pastHardCeiling = elapsedSeconds > AI_HARD_CEILING_SECONDS;
 
   return (
     <Box>
@@ -461,10 +470,23 @@ function DataModelStep({
             </Typography>
           </Stack>
           <LinearProgress variant="determinate" value={pct} sx={{ borderRadius: 1, height: 8 }} />
-          {elapsedSeconds > 150 && (
+          {elapsedSeconds > 150 && !pastHardCeiling && (
             <Typography variant="caption" color="text.secondary" textAlign="center">
               Still working — complex datasets can take a little longer than usual.
             </Typography>
+          )}
+          {pastHardCeiling && (
+            <Alert
+              severity="warning"
+              action={
+                <Button color="inherit" size="small" onClick={onCancelGeneration}>
+                  Cancel
+                </Button>
+              }
+            >
+              This is taking longer than expected — it may still complete, but you can cancel and
+              try again, or pick a report template manually instead.
+            </Alert>
           )}
         </Stack>
       ) : modelResult ? (
@@ -1055,6 +1077,12 @@ export function ReportGeneratorPage() {
   const [reportError, setReportError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // AbortControllers for the two AI-backed calls, so a stalled request (past
+  // AI_HARD_CEILING_SECONDS) can be cancelled from the UI instead of leaving the
+  // user stuck waiting on a request the client-side timeout will eventually kill anyway.
+  const modelAbortRef = useRef<AbortController | null>(null);
+  const matchAbortRef = useRef<AbortController | null>(null);
+
   const [creditBalance, setCreditBalance] = useState<CreditBalance | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -1130,13 +1158,16 @@ export function ReportGeneratorPage() {
     if (!extractedSchema) return;
     setModelGenerating(true);
     setModelError(null);
+    const controller = new AbortController();
+    modelAbortRef.current = controller;
     try {
-      const model = await generateReportModel(clientId, extractedSchema);
+      const model = await generateReportModel(clientId, extractedSchema, undefined, controller.signal);
       setModelResult(model);
     } catch (err) {
       setModelError(err instanceof Error ? err.message : "Model generation failed.");
     } finally {
       setModelGenerating(false);
+      modelAbortRef.current = null;
     }
   }
 
@@ -1144,14 +1175,23 @@ export function ReportGeneratorPage() {
     if (!extractedSchema) return;
     setMatching(true);
     setMatchError(null);
+    const controller = new AbortController();
+    matchAbortRef.current = controller;
     try {
-      const match = await matchSchemaModel(clientId, extractedSchema);
+      const match = await matchSchemaModel(clientId, extractedSchema, controller.signal);
       setMatchResult(match);
     } catch (err) {
       setMatchError(err instanceof Error ? err.message : "Failed to match against the model library.");
     } finally {
       setMatching(false);
+      matchAbortRef.current = null;
     }
+  }
+
+  /** Cancels both in-flight AI calls — offered once either has run past AI_HARD_CEILING_SECONDS. */
+  function handleCancelAiAnalysis() {
+    modelAbortRef.current?.abort();
+    matchAbortRef.current?.abort();
   }
 
   function handleOpenDataConsent() {
@@ -1221,6 +1261,8 @@ export function ReportGeneratorPage() {
   }
 
   function handleStartOver() {
+    modelAbortRef.current?.abort();
+    matchAbortRef.current?.abort();
     setFlowStep("connect");
     setUploadedFile(null);
     setExtractedSchema(null);
@@ -1291,6 +1333,7 @@ export function ReportGeneratorPage() {
             dataConsentDeciding={dataConsentDeciding}
             dataConsentError={dataConsentError}
             onOpenDataConsent={handleOpenDataConsent}
+            onCancelGeneration={handleCancelAiAnalysis}
           />
         )}
 

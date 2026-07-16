@@ -22,6 +22,16 @@ export const apiAxiosInstance: AxiosInstance = axios.create({
   },
 });
 
+/**
+ * Timeout for AI-backed calls (schema-model matching, report-model generation) that route
+ * through stbi_transformers to an LLM. Set with margin above koru-main's own outbound timeout
+ * to that service (210s — see StudioTechBI.Application.Models.ReportDesignerOptions in
+ * koru-main) so the UI doesn't cut the user off before the backend would have succeeded on
+ * its own. Not applied as the axios default — other calls (file upload, SharePoint browse)
+ * should keep failing fast rather than waiting 3+ minutes.
+ */
+export const AI_MATCH_TIMEOUT_MS = 220_000;
+
 apiAxiosInstance.interceptors.request.use(
   (config) => {
     if (import.meta.env.PROD && !config.baseURL && !apiAxiosInstance.defaults.baseURL) {

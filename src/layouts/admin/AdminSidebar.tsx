@@ -29,6 +29,7 @@ import {
   Refresh as DatasetRefreshIcon,
   History as AuditLogIcon,
   MonitorHeart as SystemHealthIcon,
+  Rule as SchemaAliasIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useState } from 'react';
@@ -49,6 +50,7 @@ const mainItems = [
   { id: 'file-uploads', title: 'File Upload Monitoring', path: ROUTES.ADMIN.FILE_UPLOAD_MONITORING, icon: <FileUploadIcon /> },
   { id: 'dataset-refresh', title: 'Dataset Refresh Logs', path: ROUTES.ADMIN.DATASET_REFRESH_LOGS, icon: <DatasetRefreshIcon /> },
   { id: 'jobs', title: 'Processing Jobs', path: ROUTES.ADMIN.JOBS, icon: <WorkIcon /> },
+  { id: 'schema-aliases', title: 'Column Aliases', path: ROUTES.ADMIN.SCHEMA_MODEL_FIELD_ALIASES, icon: <SchemaAliasIcon /> },
   { id: 'audit', title: 'Audit Logs', path: ROUTES.ADMIN.AUDIT_LOGS, icon: <AuditLogIcon /> },
   { id: 'system-health', title: 'System Health', path: ROUTES.ADMIN.SYSTEM_HEALTH, icon: <SystemHealthIcon /> },
 ];
