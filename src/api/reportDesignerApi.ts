@@ -57,6 +57,20 @@ export interface GenerateReportModelResponse {
   templates?: TemplateOption[];
   correlationId: string;
   durationMs: number;
+  // Raw blueprint JSON from stbi_transformers — opaque on the frontend, held only to be
+  // sent back unmodified to POST /report-designer/publish. Never rendered or inspected here.
+  blueprint?: unknown;
+}
+
+export interface PublishReportResponse {
+  correlationId: string;
+  workspaceId: string;
+  workspaceName: string;
+  datasetId: string;
+  datasetName: string;
+  datasetCreated: boolean;
+  tmdlFileCount: number;
+  deploySteps: string[];
 }
 
 export interface ConsentDecisionResponse {
@@ -289,5 +303,38 @@ export async function generateReportModel(
     return extractData(res.data);
   } catch (err) {
     throw aiCallError(err, 'Failed to generate report model.');
+  }
+}
+
+/**
+ * S9 — "Generate & Publish". Sends the already-generated blueprint (from a prior
+ * generateReportModel call) back to koru-main, which chains: LLM-authors TMDL -> deterministic
+ * validation -> Power BI dataset deploy. Bounded by AI_MATCH_TIMEOUT_MS and cancellable, same
+ * as generateReportModel/matchSchemaModel — the TMDL-authoring step is itself an LLM call.
+ *
+ * A 422 means the authored TMDL failed deterministic validation and publish was blocked before
+ * ever reaching deploy — surfaced here as an error whose message joins every violation, not just
+ * the first, so the caller can show the full list.
+ */
+export async function publishReport(
+  clientId: string,
+  blueprint: unknown,
+  datasetName?: string,
+  signal?: AbortSignal
+): Promise<PublishReportResponse> {
+  try {
+    const res = await apiAxiosInstance.post<ApiResponse<PublishReportResponse>>(
+      '/report-designer/publish',
+      { clientId, blueprint, ...(datasetName ? { datasetName } : {}) },
+      { timeout: AI_MATCH_TIMEOUT_MS, signal }
+    );
+    return extractData(res.data);
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response?.status === 422) {
+      const body = err.response.data as ApiResponse<unknown>;
+      const violations = body?.errors?.length ? body.errors.join(' | ') : body?.message;
+      throw new Error(violations ?? 'Authored TMDL failed validation — publish blocked before deploy.');
+    }
+    throw aiCallError(err, 'Failed to publish report.');
   }
 }
