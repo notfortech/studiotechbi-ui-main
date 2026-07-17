@@ -75,11 +75,13 @@ import {
   recordAiConsent,
   matchSchemaModel,
   recordDataUsageConsent,
+  publishReport,
   type ExtractedSchemaDto,
   type GenerateReportModelResponse,
   type StarSchema,
   type TableInfo,
   type ReportMatchResult,
+  type PublishReportResponse,
 } from "../../api/reportDesignerApi";
 import {
   generateReport,
@@ -425,6 +427,7 @@ function DataModelStep({
   extractedSchema, modelResult, generating, generateError, aiDeclined,
   matching, matchError, matchResult, dataConsentRecordedAt, dataConsentDeciding, dataConsentError, onOpenDataConsent,
   onCancelGeneration,
+  publishing, publishError, publishResult, onPublish,
 }: {
   extractedSchema: ExtractedSchemaDto;
   modelResult: GenerateReportModelResponse | null;
@@ -439,6 +442,10 @@ function DataModelStep({
   dataConsentError: string | null;
   onOpenDataConsent: () => void;
   onCancelGeneration: () => void;
+  publishing: boolean;
+  publishError: string | null;
+  publishResult: PublishReportResponse | null;
+  onPublish: () => void;
 }) {
   const { elapsedSeconds, pct } = useTimedProgress(generating);
   const pastHardCeiling = elapsedSeconds > AI_HARD_CEILING_SECONDS;
@@ -502,6 +509,36 @@ function DataModelStep({
           <Alert severity="info" sx={{ mt: 2 }}>
             Model generated in {modelResult.durationMs.toLocaleString()} ms.
           </Alert>
+
+          {modelResult.blueprint && (
+            <Box sx={{ mt: 2 }}>
+              {publishResult ? (
+                <Alert severity="success">
+                  {publishResult.datasetCreated
+                    ? `Published — new Power BI dataset "${publishResult.datasetName}" deployed to workspace "${publishResult.workspaceName}".`
+                    : `Published — reused existing Power BI dataset "${publishResult.datasetName}" in workspace "${publishResult.workspaceName}".`}
+                  {" "}({publishResult.tmdlFileCount} TMDL file{publishResult.tmdlFileCount !== 1 ? "s" : ""} authored)
+                </Alert>
+              ) : (
+                <Stack spacing={1}>
+                  {publishError && <Alert severity="error">{publishError}</Alert>}
+                  <Button
+                    variant="contained"
+                    startIcon={publishing ? <CircularProgress size={16} color="inherit" /> : <AiConsentIcon />}
+                    disabled={publishing}
+                    onClick={onPublish}
+                    sx={{ alignSelf: "flex-start" }}
+                  >
+                    {publishing ? "Publishing to Power BI…" : "Generate & Publish to Power BI"}
+                  </Button>
+                  <Typography variant="caption" color="text.secondary">
+                    Authors a semantic model (TMDL) from this data model, validates it, and deploys it as
+                    a live Power BI dataset. This can take a couple of minutes.
+                  </Typography>
+                </Stack>
+              )}
+            </Box>
+          )}
         </Box>
       ) : null}
 
@@ -1070,6 +1107,13 @@ export function ReportGeneratorPage() {
   const [dataConsentError, setDataConsentError] = useState<string | null>(null);
   const [dataConsentRecordedAt, setDataConsentRecordedAt] = useState<string | null>(null);
 
+  // S9 — "Generate & Publish": author-tmdl -> validate -> deploy, chained server-side.
+  // Only reachable once modelResult.blueprint exists (AI-assisted mode).
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [publishResult, setPublishResult] = useState<PublishReportResponse | null>(null);
+  const publishAbortRef = useRef<AbortController | null>(null);
+
   const [selectedTheme, setSelectedTheme] = useState<number | null>(null);
 
   const [report, setReport] = useState<GeneratedReport | null>(null);
@@ -1192,6 +1236,23 @@ export function ReportGeneratorPage() {
   function handleCancelAiAnalysis() {
     modelAbortRef.current?.abort();
     matchAbortRef.current?.abort();
+  }
+
+  async function handlePublish() {
+    if (!modelResult?.blueprint) return;
+    setPublishing(true);
+    setPublishError(null);
+    const controller = new AbortController();
+    publishAbortRef.current = controller;
+    try {
+      const result = await publishReport(clientId, modelResult.blueprint, undefined, controller.signal);
+      setPublishResult(result);
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : "Failed to publish report.");
+    } finally {
+      setPublishing(false);
+      publishAbortRef.current = null;
+    }
   }
 
   function handleOpenDataConsent() {
@@ -1334,6 +1395,10 @@ export function ReportGeneratorPage() {
             dataConsentError={dataConsentError}
             onOpenDataConsent={handleOpenDataConsent}
             onCancelGeneration={handleCancelAiAnalysis}
+            publishing={publishing}
+            publishError={publishError}
+            publishResult={publishResult}
+            onPublish={handlePublish}
           />
         )}
 
