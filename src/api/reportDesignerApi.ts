@@ -247,7 +247,7 @@ export async function recordAiConsent(
  * persists the result as a ReportMatchDraft. Requires prior consent, same as generateReportModel.
  *
  * Bounded by AI_MATCH_TIMEOUT_MS and cancellable via `signal` — the deterministic path is
- * fast, but an AI-escalated match can take up to koru-main's own ~210s outbound budget.
+ * fast, but an AI-escalated match can take up to koru-main's own ~330s outbound budget.
  */
 export async function matchSchemaModel(
   clientId: string,
