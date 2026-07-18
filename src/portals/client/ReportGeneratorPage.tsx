@@ -82,6 +82,7 @@ import {
   type TableInfo,
   type ReportMatchResult,
   type PublishReportResponse,
+  type AiProvider,
 } from "../../api/reportDesignerApi";
 import {
   generateReport,
@@ -1092,6 +1093,7 @@ export function ReportGeneratorPage() {
   // AI consent gate — shown after schema extraction, before any AI call is made.
   const [consentDialogOpen, setConsentDialogOpen] = useState(false);
   const [consentDeciding, setConsentDeciding] = useState(false);
+  const [aiProvider, setAiProvider] = useState<AiProvider>("anthropic");
   const [aiDeclined, setAiDeclined] = useState(false);
 
   // Schema/model/template library match (Story 3) — separate from the AI blueprint
@@ -1205,7 +1207,13 @@ export function ReportGeneratorPage() {
     const controller = new AbortController();
     modelAbortRef.current = controller;
     try {
-      const model = await generateReportModel(clientId, extractedSchema, undefined, controller.signal);
+      const model = await generateReportModel(
+        clientId,
+        extractedSchema,
+        undefined,
+        aiProvider,
+        controller.signal
+      );
       setModelResult(model);
     } catch (err) {
       setModelError(err instanceof Error ? err.message : "Model generation failed.");
@@ -1471,6 +1479,19 @@ export function ReportGeneratorPage() {
             recommend the closest-matching report model and template. You can decline and
             choose a template manually instead.
           </DialogContentText>
+          <Typography variant="subtitle2" sx={{ mt: 2.5, mb: 1 }}>
+            AI model
+          </Typography>
+          <ToggleButtonGroup
+            value={aiProvider}
+            exclusive
+            size="small"
+            fullWidth
+            onChange={(_, value) => value && setAiProvider(value as AiProvider)}
+          >
+            <ToggleButton value="anthropic">Claude Sonnet</ToggleButton>
+            <ToggleButton value="openai">OpenAI</ToggleButton>
+          </ToggleButtonGroup>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => handleConsentDecision(false)} disabled={consentDeciding}>
