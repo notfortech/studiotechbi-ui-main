@@ -50,6 +50,10 @@ export interface TemplateOption {
   score: number;
 }
 
+/** "anthropic" = Claude Sonnet, "openai" = OpenAI. Only report-model generation supports
+ *  this choice today — Blueprint generation is OpenAI-only with no equivalent switch. */
+export type AiProvider = 'anthropic' | 'openai';
+
 export interface GenerateReportModelResponse {
   // Both are best-effort: starSchema needs a fact table in the blueprint's data_model,
   // templates needs stbi_transformers's /designs step to succeed. Neither is guaranteed.
@@ -292,12 +296,18 @@ export async function generateReportModel(
   clientId: string,
   schema: ExtractedSchemaDto,
   preferredTheme?: string,
+  aiProvider?: AiProvider,
   signal?: AbortSignal
 ): Promise<GenerateReportModelResponse> {
   try {
     const res = await apiAxiosInstance.post<ApiResponse<GenerateReportModelResponse>>(
       '/report-designer/generate-model',
-      { clientId, schema, ...(preferredTheme ? { preferredTheme } : {}) },
+      {
+        clientId,
+        schema,
+        ...(preferredTheme ? { preferredTheme } : {}),
+        ...(aiProvider ? { aiProvider } : {}),
+      },
       { timeout: AI_MATCH_TIMEOUT_MS, signal }
     );
     return extractData(res.data);
