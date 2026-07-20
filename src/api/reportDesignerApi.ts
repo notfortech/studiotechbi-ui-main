@@ -66,6 +66,8 @@ export interface GenerateReportModelResponse {
   blueprint?: unknown;
 }
 
+export type PublishSource = 'MatchedTemplate' | 'GeneratedFromBlueprint';
+
 export interface PublishReportResponse {
   correlationId: string;
   workspaceId: string;
@@ -73,8 +75,10 @@ export interface PublishReportResponse {
   datasetId: string;
   datasetName: string;
   datasetCreated: boolean;
-  tmdlFileCount: number;
+  /** Null when source is MatchedTemplate — no new TMDL was authored, so a file count doesn't apply. */
+  tmdlFileCount: number | null;
   deploySteps: string[];
+  source: PublishSource;
 }
 
 export interface ConsentDecisionResponse {
@@ -325,17 +329,23 @@ export async function generateReportModel(
  * A 422 means the authored TMDL failed deterministic validation and publish was blocked before
  * ever reaching deploy — surfaced here as an error whose message joins every violation, not just
  * the first, so the caller can show the full list.
+ *
+ * templateId, when supplied, should come from a ReportMatchCandidateTemplate the caller already
+ * showed the client as a match (matchResult.candidateTemplates, filtered to isPublishReady) —
+ * koru-main trusts this choice rather than re-matching server-side. When it resolves to a
+ * publish-ready template, publish rebinds that existing dataset instead of authoring a new one.
  */
 export async function publishReport(
   clientId: string,
   blueprint: unknown,
   datasetName?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  templateId?: string
 ): Promise<PublishReportResponse> {
   try {
     const res = await apiAxiosInstance.post<ApiResponse<PublishReportResponse>>(
       '/report-designer/publish',
-      { clientId, blueprint, ...(datasetName ? { datasetName } : {}) },
+      { clientId, blueprint, ...(datasetName ? { datasetName } : {}), ...(templateId ? { templateId } : {}) },
       { timeout: AI_MATCH_TIMEOUT_MS, signal }
     );
     return extractData(res.data);
