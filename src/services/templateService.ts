@@ -12,6 +12,18 @@ export interface Template {
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  /** Columns TemplateMatchingService scores a client's schema against (TemplateDto.RequiredColumns/OptionalColumns) */
+  requiredColumns?: string[];
+  optionalColumns?: string[];
+}
+
+export interface TemplateUploadFields {
+  templateName: string;
+  version: string;
+  industry?: string;
+  requiredColumns: string[];
+  optionalColumns: string[];
+  file: File;
 }
 
 export async function getTemplates(): Promise<Template[]> {
@@ -23,8 +35,21 @@ export async function getTemplateById(id: string): Promise<Template> {
   return apiService.get<Template>(`/admin/templates/${id}`);
 }
 
-/** Create/upload: form-data with dto fields + optional file */
-export async function uploadTemplate(formData: FormData): Promise<Template> {
+/**
+ * Create/upload a template. Maps to TemplateCreateDto (koru-main):
+ * TemplateName, Version (required), Industry, RequiredColumns, OptionalColumns.
+ * RequiredColumns/OptionalColumns are List<string> on the backend, bound from
+ * repeated form fields of the same key.
+ */
+export async function uploadTemplate(fields: TemplateUploadFields): Promise<Template> {
+  const formData = new FormData();
+  formData.append('TemplateName', fields.templateName);
+  formData.append('Version', fields.version);
+  if (fields.industry) formData.append('Industry', fields.industry);
+  fields.requiredColumns.forEach((col) => formData.append('RequiredColumns', col));
+  fields.optionalColumns.forEach((col) => formData.append('OptionalColumns', col));
+  formData.append('file', fields.file);
+
   return apiService.post<Template>('/admin/templates', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
