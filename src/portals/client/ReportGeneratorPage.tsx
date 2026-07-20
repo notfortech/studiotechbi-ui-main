@@ -515,10 +515,13 @@ function DataModelStep({
             <Box sx={{ mt: 2 }}>
               {publishResult ? (
                 <Alert severity="success">
-                  {publishResult.datasetCreated
+                  {publishResult.source === "MatchedTemplate"
+                    ? `Published — matched to an existing template and refreshed with your data in workspace "${publishResult.workspaceName}".`
+                    : publishResult.datasetCreated
                     ? `Published — new Power BI dataset "${publishResult.datasetName}" deployed to workspace "${publishResult.workspaceName}".`
                     : `Published — reused existing Power BI dataset "${publishResult.datasetName}" in workspace "${publishResult.workspaceName}".`}
-                  {" "}({publishResult.tmdlFileCount} TMDL file{publishResult.tmdlFileCount !== 1 ? "s" : ""} authored)
+                  {publishResult.tmdlFileCount !== null &&
+                    ` (${publishResult.tmdlFileCount} TMDL file${publishResult.tmdlFileCount !== 1 ? "s" : ""} authored)`}
                 </Alert>
               ) : (
                 <Stack spacing={1}>
@@ -1253,7 +1256,10 @@ export function ReportGeneratorPage() {
     const controller = new AbortController();
     publishAbortRef.current = controller;
     try {
-      const result = await publishReport(clientId, modelResult.blueprint, undefined, controller.signal);
+      // Prefer a template the match step already showed as publish-ready over authoring a new
+      // dataset from scratch — koru-main rebinds that existing dataset instead when this is set.
+      const matchedTemplateId = matchResult?.candidateTemplates.find((t) => t.isPublishReady)?.templateId;
+      const result = await publishReport(clientId, modelResult.blueprint, undefined, controller.signal, matchedTemplateId);
       setPublishResult(result);
     } catch (err) {
       setPublishError(err instanceof Error ? err.message : "Failed to publish report.");
