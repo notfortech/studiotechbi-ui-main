@@ -32,6 +32,14 @@ export const apiAxiosInstance: AxiosInstance = axios.create({
  */
 export const AI_MATCH_TIMEOUT_MS = 340_000;
 
+/**
+ * Timeout for the Dashboard Template Generator (POST /dashboard-template/generate), which chains
+ * TMDL authoring (same stbi_transformers hop as AI_MATCH_TIMEOUT_MS, up to ~330s) with a Power BI
+ * PBIP import that itself polls for up to ~60s server-side, plus gateway/refresh calls on top.
+ * Extra margin over AI_MATCH_TIMEOUT_MS to cover that added round-trip.
+ */
+export const DASHBOARD_TEMPLATE_TIMEOUT_MS = 480_000;
+
 apiAxiosInstance.interceptors.request.use(
   (config) => {
     if (import.meta.env.PROD && !config.baseURL && !apiAxiosInstance.defaults.baseURL) {

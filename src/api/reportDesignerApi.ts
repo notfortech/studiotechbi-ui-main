@@ -1,4 +1,4 @@
-import { apiAxiosInstance, AI_MATCH_TIMEOUT_MS } from '../services/apiClient';
+import { apiAxiosInstance, AI_MATCH_TIMEOUT_MS, DASHBOARD_TEMPLATE_TIMEOUT_MS } from '../services/apiClient';
 import axios, { AxiosError } from 'axios';
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────
@@ -118,6 +118,47 @@ export interface ReportMatchResult {
 export interface DataUsageConsentResult {
   draftId: string;
   approvedAt: string;
+}
+
+// ── Dashboard Template Generator ────────────────────────────────────────────────
+
+export interface TmdlFileDto {
+  path: string;
+  content: string;
+}
+
+export type ProvenanceSource = 'uploaded' | 'mocked';
+
+export interface ProvenanceEntry {
+  table: string;
+  column: string;
+  dataType: string;
+  source: ProvenanceSource;
+  rowCount: number;
+}
+
+export interface GenerateDashboardTemplateResponse {
+  correlationId: string;
+  provenance: ProvenanceEntry[];
+  blendedDatasetBlobPath: string;
+  blendedDatasetDownloadUrl: string | null;
+  patchedTmdlFiles: TmdlFileDto[];
+  tmdlPatched: boolean;
+  summary: string;
+  /** True once a real Power BI dataset+report was published — workspaceId/datasetId/reportId are
+   *  only populated when this is true. False doesn't mean failure of the whole request — Phase
+   *  1-2's blended dataset and semantic model are still returned; see visualGenerationLog for why. */
+  deployed: boolean;
+  workspaceId: string | null;
+  datasetId: string | null;
+  reportId: string | null;
+  /** Type fallbacks, axis auto-inference, unresolved measure/field references, and (if deploy was
+   *  attempted) the deploy step-by-step log or failure reason — the single log covering everything
+   *  the client needs to know about what's real, what's mocked, and what to fix. */
+  visualGenerationLog: string[];
+  designBlueprintTemplateId: string | null;
+  designBlueprintTier: string | null;
+  designBlueprintLabel: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -356,5 +397,45 @@ export async function publishReport(
       throw new Error(violations ?? 'Authored TMDL failed validation — publish blocked before deploy.');
     }
     throw aiCallError(err, 'Failed to publish report.');
+  }
+}
+
+/**
+ * Dashboard Template Generator — POST /dashboard-template/generate. Sends the client's originally
+ * uploaded file alongside the already-generated blueprint (Analytics Blueprint from
+ * generateReportModel, or a pasted Design Blueprint — auto-detected server-side): blends real
+ * values with clearly-labeled mock data, generates a real report with visuals, and publishes it
+ * to the same Power BI tenant the embed flow already uses. Bounded by
+ * DASHBOARD_TEMPLATE_TIMEOUT_MS — longer than AI_MATCH_TIMEOUT_MS since this also waits on a
+ * Power BI import that can itself take up to ~60s server-side on top of TMDL authoring.
+ *
+ * Deploy failure doesn't throw — a non-2xx from the deploy step still resolves with
+ * `deployed: false` and the reason folded into `visualGenerationLog`, so the blended dataset and
+ * semantic model (still generated) aren't lost behind a thrown error.
+ */
+export async function generateDashboardTemplate(
+  clientId: string,
+  file: File,
+  blueprint: unknown,
+  signal?: AbortSignal
+): Promise<GenerateDashboardTemplateResponse> {
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('clientId', clientId);
+    form.append('blueprint', JSON.stringify(blueprint));
+
+    const res = await apiAxiosInstance.post<ApiResponse<GenerateDashboardTemplateResponse>>(
+      '/dashboard-template/generate',
+      form,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: DASHBOARD_TEMPLATE_TIMEOUT_MS,
+        signal,
+      }
+    );
+    return extractData(res.data);
+  } catch (err) {
+    throw aiCallError(err, 'Failed to generate dashboard template.');
   }
 }

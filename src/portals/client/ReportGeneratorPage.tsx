@@ -75,13 +75,13 @@ import {
   recordAiConsent,
   matchSchemaModel,
   recordDataUsageConsent,
-  publishReport,
+  generateDashboardTemplate,
   type ExtractedSchemaDto,
   type GenerateReportModelResponse,
   type StarSchema,
   type TableInfo,
   type ReportMatchResult,
-  type PublishReportResponse,
+  type GenerateDashboardTemplateResponse,
   type AiProvider,
 } from "../../api/reportDesignerApi";
 import {
@@ -424,11 +424,117 @@ function SchemaModelMatchPanel({
   );
 }
 
+// ── Dashboard Template Generator result (provenance log + visual log + deploy status) ──────────
+
+function ProvenanceList({ provenance }: { provenance: GenerateDashboardTemplateResponse["provenance"] }) {
+  if (provenance.length === 0) return null;
+  return (
+    <Stack spacing={0.5}>
+      {provenance.map((p) => (
+        <Stack key={`${p.table}.${p.column}`} direction="row" spacing={1.5} alignItems="center"
+          sx={{ py: 0.5, borderBottom: "1px solid", borderColor: "divider" }}>
+          <Chip
+            label={p.source === "uploaded" ? "Uploaded" : "Mocked"}
+            size="small"
+            color={p.source === "uploaded" ? "success" : "warning"}
+            sx={{ minWidth: 76 }}
+          />
+          <Typography variant="body2" fontWeight={600} sx={{ minWidth: 160 }}>
+            {p.table}[{p.column}]
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ minWidth: 70 }}>{p.dataType}</Typography>
+          <Typography variant="caption" color="text.secondary">{p.rowCount} row{p.rowCount !== 1 ? "s" : ""}</Typography>
+        </Stack>
+      ))}
+    </Stack>
+  );
+}
+
+function DashboardTemplateResultPanel({ result }: { result: GenerateDashboardTemplateResponse }) {
+  const uploadedCount = result.provenance.filter((p) => p.source === "uploaded").length;
+  const mockedCount = result.provenance.filter((p) => p.source === "mocked").length;
+  const powerBiUrl = result.deployed && result.workspaceId && result.reportId
+    ? `https://app.powerbi.com/groups/${result.workspaceId}/reports/${result.reportId}`
+    : null;
+
+  return (
+    <Box>
+      <Alert severity={result.deployed ? "success" : "warning"} sx={{ mb: 2 }}>
+        {result.summary}
+      </Alert>
+
+      {result.designBlueprintLabel && (
+        <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+          <Chip size="small" color="primary" label={result.designBlueprintLabel} />
+          {result.designBlueprintTier && (
+            <Chip size="small" variant="outlined" label={result.designBlueprintTier} />
+          )}
+        </Stack>
+      )}
+
+      {powerBiUrl && (
+        <Button
+          variant="contained"
+          color="success"
+          href={powerBiUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          sx={{ mb: 2 }}
+        >
+          Open in Power BI
+        </Button>
+      )}
+
+      {result.deployed && (
+        <Paper variant="outlined" sx={{ p: 1.5, mb: 2, bgcolor: "background.default" }}>
+          <Stack direction="row" spacing={3} flexWrap="wrap" gap={1}>
+            <Typography variant="caption" sx={{ fontFamily: "monospace" }}>Workspace: {result.workspaceId}</Typography>
+            <Typography variant="caption" sx={{ fontFamily: "monospace" }}>Dataset: {result.datasetId}</Typography>
+            <Typography variant="caption" sx={{ fontFamily: "monospace" }}>Report: {result.reportId}</Typography>
+          </Stack>
+        </Paper>
+      )}
+
+      <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+        Data provenance — {uploadedCount} from your file, {mockedCount} mocked
+      </Typography>
+      <Paper variant="outlined" sx={{ p: 2, mb: 2, maxHeight: 260, overflowY: "auto" }}>
+        <ProvenanceList provenance={result.provenance} />
+      </Paper>
+
+      {result.visualGenerationLog.length > 0 && (
+        <>
+          <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>Generation log</Typography>
+          <Paper variant="outlined" sx={{ p: 2, mb: 2, maxHeight: 220, overflowY: "auto" }}>
+            <Stack spacing={0.75}>
+              {result.visualGenerationLog.map((line, i) => (
+                <Typography key={i} variant="caption" color="text.secondary">• {line}</Typography>
+              ))}
+            </Stack>
+          </Paper>
+        </>
+      )}
+
+      {result.blendedDatasetDownloadUrl && (
+        <Button
+          variant="outlined"
+          size="small"
+          href={result.blendedDatasetDownloadUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Download blended dataset
+        </Button>
+      )}
+    </Box>
+  );
+}
+
 function DataModelStep({
   extractedSchema, modelResult, generating, generateError, aiDeclined,
   matching, matchError, matchResult, dataConsentRecordedAt, dataConsentDeciding, dataConsentError, onOpenDataConsent,
   onCancelGeneration,
-  publishing, publishError, publishResult, onPublish,
+  generatingTemplate, templateError, templateResult, onGenerateTemplate,
 }: {
   extractedSchema: ExtractedSchemaDto;
   modelResult: GenerateReportModelResponse | null;
@@ -443,10 +549,10 @@ function DataModelStep({
   dataConsentError: string | null;
   onOpenDataConsent: () => void;
   onCancelGeneration: () => void;
-  publishing: boolean;
-  publishError: string | null;
-  publishResult: PublishReportResponse | null;
-  onPublish: () => void;
+  generatingTemplate: boolean;
+  templateError: string | null;
+  templateResult: GenerateDashboardTemplateResponse | null;
+  onGenerateTemplate: () => void;
 }) {
   const { elapsedSeconds, pct } = useTimedProgress(generating);
   const pastHardCeiling = elapsedSeconds > AI_HARD_CEILING_SECONDS;
@@ -513,31 +619,24 @@ function DataModelStep({
 
           {modelResult.blueprint && (
             <Box sx={{ mt: 2 }}>
-              {publishResult ? (
-                <Alert severity="success">
-                  {publishResult.source === "MatchedTemplate"
-                    ? `Published — matched to an existing template and refreshed with your data in workspace "${publishResult.workspaceName}".`
-                    : publishResult.datasetCreated
-                    ? `Published — new Power BI dataset "${publishResult.datasetName}" deployed to workspace "${publishResult.workspaceName}".`
-                    : `Published — reused existing Power BI dataset "${publishResult.datasetName}" in workspace "${publishResult.workspaceName}".`}
-                  {publishResult.tmdlFileCount !== null &&
-                    ` (${publishResult.tmdlFileCount} TMDL file${publishResult.tmdlFileCount !== 1 ? "s" : ""} authored)`}
-                </Alert>
+              {templateResult ? (
+                <DashboardTemplateResultPanel result={templateResult} />
               ) : (
                 <Stack spacing={1}>
-                  {publishError && <Alert severity="error">{publishError}</Alert>}
+                  {templateError && <Alert severity="error">{templateError}</Alert>}
                   <Button
                     variant="contained"
-                    startIcon={publishing ? <CircularProgress size={16} color="inherit" /> : <AiConsentIcon />}
-                    disabled={publishing}
-                    onClick={onPublish}
+                    startIcon={generatingTemplate ? <CircularProgress size={16} color="inherit" /> : <AiConsentIcon />}
+                    disabled={generatingTemplate}
+                    onClick={onGenerateTemplate}
                     sx={{ alignSelf: "flex-start" }}
                   >
-                    {publishing ? "Publishing to Power BI…" : "Generate & Publish to Power BI"}
+                    {generatingTemplate ? "Generating Dashboard Template…" : "Generate Dashboard Template"}
                   </Button>
                   <Typography variant="caption" color="text.secondary">
-                    Authors a semantic model (TMDL) from this data model, validates it, and deploys it as
-                    a live Power BI dataset. This can take a couple of minutes.
+                    Blends your uploaded data with mock data for any missing fields, generates a real
+                    Power BI report with visuals, and publishes it to your workspace. This can take a
+                    few minutes.
                   </Typography>
                 </Stack>
               )}
@@ -1112,12 +1211,12 @@ export function ReportGeneratorPage() {
   const [dataConsentError, setDataConsentError] = useState<string | null>(null);
   const [dataConsentRecordedAt, setDataConsentRecordedAt] = useState<string | null>(null);
 
-  // S9 — "Generate & Publish": author-tmdl -> validate -> deploy, chained server-side.
-  // Only reachable once modelResult.blueprint exists (AI-assisted mode).
-  const [publishing, setPublishing] = useState(false);
-  const [publishError, setPublishError] = useState<string | null>(null);
-  const [publishResult, setPublishResult] = useState<PublishReportResponse | null>(null);
-  const publishAbortRef = useRef<AbortController | null>(null);
+  // Dashboard Template Generator — blend + patch + generate visuals + PBIP import, chained
+  // server-side. Only reachable once modelResult.blueprint exists (AI-assisted mode).
+  const [templateGenerating, setTemplateGenerating] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateResult, setTemplateResult] = useState<GenerateDashboardTemplateResponse | null>(null);
+  const templateAbortRef = useRef<AbortController | null>(null);
 
   const [selectedTheme, setSelectedTheme] = useState<number | null>(null);
 
@@ -1249,23 +1348,20 @@ export function ReportGeneratorPage() {
     matchAbortRef.current?.abort();
   }
 
-  async function handlePublish() {
-    if (!modelResult?.blueprint) return;
-    setPublishing(true);
-    setPublishError(null);
+  async function handleGenerateTemplate() {
+    if (!modelResult?.blueprint || !uploadedFile) return;
+    setTemplateGenerating(true);
+    setTemplateError(null);
     const controller = new AbortController();
-    publishAbortRef.current = controller;
+    templateAbortRef.current = controller;
     try {
-      // Prefer a template the match step already showed as publish-ready over authoring a new
-      // dataset from scratch — koru-main rebinds that existing dataset instead when this is set.
-      const matchedTemplateId = matchResult?.candidateTemplates.find((t) => t.isPublishReady)?.templateId;
-      const result = await publishReport(clientId, modelResult.blueprint, undefined, controller.signal, matchedTemplateId);
-      setPublishResult(result);
+      const result = await generateDashboardTemplate(clientId, uploadedFile, modelResult.blueprint, controller.signal);
+      setTemplateResult(result);
     } catch (err) {
-      setPublishError(err instanceof Error ? err.message : "Failed to publish report.");
+      setTemplateError(err instanceof Error ? err.message : "Failed to generate dashboard template.");
     } finally {
-      setPublishing(false);
-      publishAbortRef.current = null;
+      setTemplateGenerating(false);
+      templateAbortRef.current = null;
     }
   }
 
@@ -1352,6 +1448,8 @@ export function ReportGeneratorPage() {
     setMatchError(null);
     setDataConsentRecordedAt(null);
     setDataConsentError(null);
+    setTemplateResult(null);
+    setTemplateError(null);
   }
 
   const theme = REPORT_THEMES[selectedTheme ?? 0];
@@ -1409,10 +1507,10 @@ export function ReportGeneratorPage() {
             dataConsentError={dataConsentError}
             onOpenDataConsent={handleOpenDataConsent}
             onCancelGeneration={handleCancelAiAnalysis}
-            publishing={publishing}
-            publishError={publishError}
-            publishResult={publishResult}
-            onPublish={handlePublish}
+            generatingTemplate={templateGenerating}
+            templateError={templateError}
+            templateResult={templateResult}
+            onGenerateTemplate={handleGenerateTemplate}
           />
         )}
 
