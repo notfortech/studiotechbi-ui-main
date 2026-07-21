@@ -33,9 +33,13 @@ import {
   getAvailableReportsConfig,
   getAvailableReportsConfigForClient,
   getAccountantClients,
+  getGeneratedReports,
   type AvailableReportConfig,
   type AccountantClient,
+  type GeneratedReportEntry,
 } from "../../services/reportService";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import AutoAwesomeMosaicIcon from "@mui/icons-material/AutoAwesomeMosaic";
 import { useAuth } from "../../auth/AuthContext";
 import { useClientView } from "../../layouts/client/ClientViewContext";
 import { canSelectReportClient } from "../../core/reportClientAccess";
@@ -58,6 +62,11 @@ export const ReportsListPage = () => {
 
   const [accountantClients, setAccountantClients] = useState<AccountantClient[]>([]);
   const [accountantClientsLoading, setAccountantClientsLoading] = useState(false);
+
+  // Dashboard Template Generator runs for the relevant client — separate from the period-based
+  // "Financial Report" cards above, since a client can have several of these over time.
+  const [generatedReports, setGeneratedReports] = useState<GeneratedReportEntry[]>([]);
+  const [generatedReportsLoading, setGeneratedReportsLoading] = useState(false);
 
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: "success" | "error" | "info" }>({
     open: false, message: "", severity: "info",
@@ -111,6 +120,30 @@ export const ReportsListPage = () => {
     return () => { cancelled = true; };
   }, [showClientDropdown, selectedClientCode]);
 
+  // Load Dashboard Template Generator run history for the relevant client
+  useEffect(() => {
+    const targetClientCode = showClientDropdown ? selectedClientCode : user?.clientCode;
+    if (!targetClientCode) {
+      setGeneratedReports([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setGeneratedReportsLoading(true);
+        const result = await getGeneratedReports(targetClientCode, { useSelectedClient: showClientDropdown });
+        if (!cancelled) {
+          setGeneratedReports(result.reports.filter((r) => r.reportType === "dashboard-template-generated"));
+        }
+      } catch {
+        if (!cancelled) setGeneratedReports([]);
+      } finally {
+        if (!cancelled) setGeneratedReportsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showClientDropdown, selectedClientCode, user?.clientCode]);
+
   // Auto-navigate to view on first load; skip when user clicked "Back to Reports"
   useEffect(() => {
     if (configsLoading) return;
@@ -151,6 +184,13 @@ export const ReportsListPage = () => {
 
   const isConfigured = (config: AvailableReportConfig) =>
     !!(config.powerBIReportId || config.powerBIDatasetId);
+
+  const formatTimestamp = (d?: string) => (d ? new Date(d).toLocaleString() : "—");
+
+  const powerBiUrlFor = (report: GeneratedReportEntry): string | null =>
+    report.workspaceId && report.reportId
+      ? `https://app.powerbi.com/groups/${report.workspaceId}/reports/${report.reportId}`
+      : null;
 
   if (isClientPortal && !showClientDropdown && !configsLoading && !user?.clientCode) {
     return (
@@ -335,6 +375,59 @@ export const ReportsListPage = () => {
           </Grid>
         )}
       </Paper>
+
+      {(generatedReportsLoading || generatedReports.length > 0) && (
+        <Paper sx={{ p: 3, mt: 3 }}>
+          <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2 }}>
+            <AutoAwesomeMosaicIcon color="primary" />
+            <Typography variant="h6" fontWeight={600}>Generated Dashboard Templates</Typography>
+          </Stack>
+
+          {generatedReportsLoading ? (
+            <Box display="flex" justifyContent="center" py={3}>
+              <CircularProgress size={24} />
+            </Box>
+          ) : (
+            <Grid container spacing={2}>
+              {generatedReports.map((report, idx) => {
+                const url = powerBiUrlFor(report);
+                return (
+                  <Grid key={report.datasetId ?? idx} size={{ xs: 12, sm: 6, md: 4 }}>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="body2" color="text.secondary">
+                          Generated {formatTimestamp(report.createdAt)}
+                        </Typography>
+                        <Typography variant="caption" color="text.disabled" sx={{ display: "block", fontFamily: "monospace", mt: 0.5 }}>
+                          Dataset: {report.datasetId ?? "—"}
+                        </Typography>
+                      </CardContent>
+                      <CardActions sx={{ px: 2, pb: 2 }}>
+                        {url ? (
+                          <Button
+                            fullWidth
+                            variant="outlined"
+                            endIcon={<OpenInNewIcon />}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Open in Power BI
+                          </Button>
+                        ) : (
+                          <Button fullWidth variant="outlined" endIcon={<OpenInNewIcon />} disabled>
+                            Open in Power BI
+                          </Button>
+                        )}
+                      </CardActions>
+                    </Card>
+                  </Grid>
+                );
+              })}
+            </Grid>
+          )}
+        </Paper>
+      )}
 
       <Snackbar
         open={snackbar.open}
