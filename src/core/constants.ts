@@ -38,6 +38,7 @@ export const ROUTES = {
     SETTINGS: '/admin/settings',
     LOGS_FUNCTIONAL: '/admin/logs/functional',
     LOGS_TECHNICAL: '/admin/logs/technical',
+    LOGS_DASHBOARD_TEMPLATE: '/admin/logs/dashboard-template',
   },
 
   ACCOUNTANT: {

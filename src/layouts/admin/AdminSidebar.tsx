@@ -22,6 +22,7 @@ import {
   ExpandMore,
   BugReport as FunctionalLogIcon,
   Code as TechnicalLogIcon,
+  AutoAwesomeMosaic as DashboardTemplateLogIcon,
   Apartment as TenantsIcon,
   BarChart as PowerBIIcon,
   AccountTree as PipelineIcon,
@@ -58,6 +59,7 @@ const mainItems = [
 const logsItems = [
   { id: 'functional', title: 'Functional Logs', path: ROUTES.ADMIN.LOGS_FUNCTIONAL, icon: <FunctionalLogIcon /> },
   { id: 'technical', title: 'Technical Logs', path: ROUTES.ADMIN.LOGS_TECHNICAL, icon: <TechnicalLogIcon /> },
+  { id: 'dashboard-template', title: 'Dashboard Template Logs', path: ROUTES.ADMIN.LOGS_DASHBOARD_TEMPLATE, icon: <DashboardTemplateLogIcon /> },
 ];
 
 export const AdminSidebar = ({ open }: AdminSidebarProps) => {

@@ -23,6 +23,7 @@ import { AuditLogsPage } from '../portals/admin/AuditLogsPage';
 import { SystemHealthPage } from '../portals/admin/SystemHealthPage';
 import { FunctionalLogsPage } from '../portals/admin/FunctionalLogsPage';
 import { TechnicalLogsPage } from '../portals/admin/TechnicalLogsPage';
+import { DashboardTemplateLogsPage } from '../portals/admin/DashboardTemplateLogsPage';
 import { SettingsPage } from '../portals/admin/SettingsPage';
 import { AdminReportsPage } from '../portals/admin/ReportsPage';
 import { AccountantDashboard } from '../portals/accountant/AccountantDashboard';
@@ -129,6 +130,10 @@ export const routes: RouteObject[] = [
       {
         path: 'logs/technical',
         element: <TechnicalLogsPage />,
+      },
+      {
+        path: 'logs/dashboard-template',
+        element: <DashboardTemplateLogsPage />,
       },
       {
         path: 'reports',

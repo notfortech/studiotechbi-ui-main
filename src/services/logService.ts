@@ -47,3 +47,16 @@ export async function getTechnicalLogs(params?: TechnicalLogsParams): Promise<Te
   );
   return Array.isArray(data) ? data : (data as { logs: TechnicalLogEntry[] }).logs ?? [];
 }
+
+/** Dashboard Template Generator run history — same shape as FunctionalLogEntry (reuses the
+ *  FunctionalLog table server-side), one entry per generation attempt, success or failure. */
+export async function getDashboardTemplateLogs(params?: FunctionalLogsParams): Promise<FunctionalLogEntry[]> {
+  const sp = new URLSearchParams();
+  if (params?.limit != null) sp.set('limit', String(params.limit));
+  if (params?.clientId) sp.set('clientId', params.clientId);
+  const q = sp.toString();
+  const data = await apiService.get<FunctionalLogEntry[] | { logs: FunctionalLogEntry[] }>(
+    `/admin/logs/dashboard-template${q ? `?${q}` : ''}`
+  );
+  return Array.isArray(data) ? data : (data as { logs: FunctionalLogEntry[] }).logs ?? [];
+}

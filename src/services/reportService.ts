@@ -496,6 +496,40 @@ export async function getAiInsightsForReportPage(args: {
   return { enabled: false, message };
 }
 
+/** One Power BI asset from GET /api/reports/list — includes Dashboard Template Generator runs
+ *  (reportType "dashboard-template-generated") alongside any other report type. */
+export interface GeneratedReportEntry {
+  reportType?: string;
+  reportId?: string;
+  datasetId?: string;
+  workspaceId?: string;
+  createdAt?: string;
+}
+
+export interface GeneratedReportsResponse {
+  clientCode?: string;
+  clientId?: string;
+  clientName?: string;
+  reports: GeneratedReportEntry[];
+}
+
+/**
+ * Call GET /api/reports/list (own client) or GET /api/reports/list/{clientCodeOrId} (accountant
+ * viewing a specific client). Returns every active Power BI asset for that client, not filtered
+ * to one "best" report per type — the right shape for showing a history of generated reports.
+ */
+export async function getGeneratedReports(
+  clientCodeOrId?: string,
+  options?: { useSelectedClient?: boolean }
+): Promise<GeneratedReportsResponse> {
+  const baseUrl = clientCodeOrId ? `/reports/list/${encodeURIComponent(clientCodeOrId)}` : "/reports/list";
+  const params = new URLSearchParams();
+  if (options?.useSelectedClient) params.set("useSelectedClient", "true");
+  const url = params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
+  const data = await apiService.get<GeneratedReportsResponse>(url);
+  return data ?? { reports: [] };
+}
+
 /** Fetch available reporting periods for a client. Uses clientCode for multi-tenant. */
 export const getAvailableReports = async (
   clientCode?: string,
