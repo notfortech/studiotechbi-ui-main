@@ -19,11 +19,15 @@ export interface ReportKpi {
   value: number;
   column: string;
   aggregation: string;
+  change?: number | null;
+  unit?: string | null;
 }
 
 export interface ReportChartSeries {
   name: string;
   values: number[];
+  unit?: string | null;
+  percentOfTotal?: number[] | null;
 }
 
 export interface ReportChart {
@@ -103,5 +107,45 @@ export async function generateReport(
     return extractData(res.data);
   } catch (err) {
     throw err instanceof Error ? err : apiError(err, 'Failed to generate report.');
+  }
+}
+
+// ── AI summary + PDF export ──────────────────────────────────────────────────
+// Both operate on an already-generated report — no re-upload of the source file.
+
+export interface ReportAiSummary {
+  enabled: boolean;
+  message?: string;
+  provider?: string;
+  summary?: string;
+  insights?: string[];
+  followUps?: string[];
+}
+
+export async function getReportAiSummary(report: GeneratedReport): Promise<ReportAiSummary> {
+  try {
+    // Not wrapped in ApiResponse<T> — mirrors ReportsController's /reports/ai-insights
+    // shape, which returns { enabled, ... } directly rather than the standard envelope.
+    const res = await apiAxiosInstance.post<ReportAiSummary>('/report-generator/ai-summary', report);
+    return res.data;
+  } catch (err) {
+    throw err instanceof Error ? err : apiError(err, 'Failed to generate AI summary.');
+  }
+}
+
+export async function exportReportPdf(
+  report: GeneratedReport,
+  aiSummary?: string,
+  insights?: string[]
+): Promise<Blob> {
+  try {
+    const res = await apiAxiosInstance.post(
+      '/report-generator/export-pdf',
+      { report, aiSummary, insights },
+      { responseType: 'blob' }
+    );
+    return res.data as Blob;
+  } catch (err) {
+    throw err instanceof Error ? err : apiError(err, 'Failed to export report PDF.');
   }
 }

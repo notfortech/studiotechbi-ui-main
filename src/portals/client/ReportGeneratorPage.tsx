@@ -27,6 +27,10 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
+  Drawer,
+  IconButton,
+  Skeleton,
+  Tooltip as MuiTooltip,
 } from "@mui/material";
 import {
   CloudUpload as UploadIcon,
@@ -44,6 +48,8 @@ import {
   ShowChart as LineFormatIcon,
   Timeline as AreaFormatIcon,
   SmartToy as AiConsentIcon,
+  PictureAsPdf as PdfIcon,
+  Close as CloseIcon,
 } from "@mui/icons-material";
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "../../auth/AuthContext";
@@ -86,8 +92,11 @@ import {
 } from "../../api/reportDesignerApi";
 import {
   generateReport,
+  getReportAiSummary,
+  exportReportPdf,
   type GeneratedReport,
   type ReportChart,
+  type ReportAiSummary,
 } from "../../api/reportGeneratorApi";
 import { REPORT_THEMES, themeById, MiniReportPreview, type VisualTheme } from "./reportThemes";
 import { getCreditBalance, type CreditBalance } from "../../api/creditsApi";
@@ -783,13 +792,49 @@ function TemplateStep({
 
 // ── Step 3: Report ────────────────────────────────────────────────────────────
 
+// Formats a raw KPI value per its (best-effort) unit hint from the engine — currency/percent/
+// days get their own presentation, everything else falls back to a plain formatted number.
+function formatKpiValue(value: number, unit?: string | null): string {
+  switch (unit) {
+    case "currency":
+      return value.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+    case "percent":
+      return `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
+    case "days":
+      return `${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}d`;
+    default:
+      return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+}
+
+function ChangeBadge({ change }: { change: number }) {
+  const up = change >= 0;
+  return (
+    <Typography
+      component="span"
+      variant="caption"
+      sx={{ color: up ? "success.main" : "error.main", fontWeight: 700, ml: 0.75 }}
+    >
+      {up ? "▲" : "▼"} {Math.abs(change).toLocaleString(undefined, { maximumFractionDigits: 1 })}%
+    </Typography>
+  );
+}
+
 function ReportKpiCard({ kpi, theme }: { kpi: GeneratedReport["kpis"][number]; theme: VisualTheme }) {
   const isDark = theme.mode === "dark";
-  const value = kpi.value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const value = formatKpiValue(kpi.value, kpi.unit);
   const caption = `${kpi.aggregation} of ${kpi.column}`;
+  const changeNode = kpi.change != null ? <ChangeBadge change={kpi.change} /> : null;
 
   if (!isDark) {
-    return <MetricTile label={kpi.label} value={value} caption={caption} accent="blue" />;
+    return (
+      <MetricTile
+        label={kpi.label}
+        value={<>{value}{changeNode}</>}
+        caption={caption}
+        accent="blue"
+      />
+    );
   }
 
   return (
@@ -817,6 +862,7 @@ function ReportKpiCard({ kpi, theme }: { kpi: GeneratedReport["kpis"][number]; t
         }}
       >
         {value}
+        {changeNode}
       </Typography>
       <Typography variant="caption" sx={{ color: alpha("#FFFFFF", 0.55), mt: 0.5, display: "block" }}>
         {caption}
@@ -849,7 +895,11 @@ function RankedList({ chart, colors, isDark }: { chart: ReportChart; colors: str
   const labels = chart.categories ?? chart.x ?? [];
   const primarySeries = chart.series[0];
   const rows = labels
-    .map((label, i) => ({ label, value: primarySeries?.values[i] ?? 0 }))
+    .map((label, i) => ({
+      label,
+      value: primarySeries?.values[i] ?? 0,
+      percent: primarySeries?.percentOfTotal?.[i],
+    }))
     .sort((a, b) => b.value - a.value);
   const max = Math.max(...rows.map((r) => r.value), 1);
 
@@ -866,6 +916,11 @@ function RankedList({ chart, colors, isDark }: { chart: ReportChart; colors: str
             </Typography>
             <Typography variant="caption" sx={{ color: isDark ? "#FFFFFF" : "text.primary", fontWeight: 700 }}>
               {row.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              {row.percent != null && (
+                <Typography component="span" variant="caption" sx={{ color: isDark ? alpha("#FFFFFF", 0.55) : "text.secondary", ml: 0.5 }}>
+                  ({row.percent.toLocaleString(undefined, { maximumFractionDigits: 1 })}%)
+                </Typography>
+              )}
             </Typography>
           </Stack>
           <Box
@@ -1034,7 +1089,7 @@ function FilterBar({
     <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" gap={1} sx={{ mb: 3 }}>
       <Stack direction="row" spacing={0.5} alignItems="center" sx={{ color: "text.secondary" }}>
         <FilterIcon fontSize="small" />
-        <Typography variant="body2">Filters:</Typography>
+        <Typography variant="body2">Filter by (dimensions):</Typography>
       </Stack>
       {slicers.map((slicer) => (
         <FormControl key={slicer.column} size="small" sx={{ minWidth: 160 }} disabled={disabled}>
@@ -1058,6 +1113,79 @@ function FilterBar({
   );
 }
 
+function AiSummaryPanel({
+  open, onClose, loading, summary, error,
+}: {
+  open: boolean;
+  onClose: () => void;
+  loading: boolean;
+  summary: ReportAiSummary | null;
+  error: string | null;
+}) {
+  return (
+    <Drawer anchor="left" open={open} onClose={onClose}>
+      <Box sx={{ width: { xs: "100vw", sm: 420 }, p: 3 }} role="presentation">
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <AiModeIcon color="primary" />
+            <Typography variant="h6" fontWeight={700}>AI Summary</Typography>
+          </Stack>
+          <IconButton onClick={onClose} size="small" aria-label="Close AI summary">
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Stack>
+
+        {loading && (
+          <Stack spacing={1.5}>
+            <Skeleton variant="text" height={24} />
+            <Skeleton variant="text" height={24} />
+            <Skeleton variant="text" height={24} width="80%" />
+          </Stack>
+        )}
+
+        {!loading && error && <Alert severity="error">{error}</Alert>}
+
+        {!loading && !error && summary && !summary.enabled && (
+          <Alert severity="info">{summary.message ?? "AI is not enabled for this client."}</Alert>
+        )}
+
+        {!loading && !error && summary?.enabled && (
+          <Stack spacing={2.5}>
+            {summary.summary && (
+              <Typography variant="body2" sx={{ lineHeight: 1.6 }}>{summary.summary}</Typography>
+            )}
+            {summary.insights && summary.insights.length > 0 && (
+              <Box>
+                <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>Key Insights</Typography>
+                <Stack spacing={1}>
+                  {summary.insights.map((insight, i) => (
+                    <Typography key={i} variant="body2" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+                      • {insight}
+                    </Typography>
+                  ))}
+                </Stack>
+              </Box>
+            )}
+            {summary.followUps && summary.followUps.length > 0 && (
+              <Box>
+                <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>You might also ask</Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  {summary.followUps.map((q, i) => (
+                    <Chip key={i} label={q} size="small" variant="outlined" />
+                  ))}
+                </Stack>
+              </Box>
+            )}
+            {summary.provider && (
+              <Typography variant="caption" color="text.secondary">Powered by {summary.provider}</Typography>
+            )}
+          </Stack>
+        )}
+      </Box>
+    </Drawer>
+  );
+}
+
 function ReportResultsStep({
   report, theme, onFilterChange, onClearFilters, refreshing,
 }: {
@@ -1067,10 +1195,83 @@ function ReportResultsStep({
   onClearFilters: () => void;
   refreshing: boolean;
 }) {
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSummary, setAiSummary] = useState<ReportAiSummary | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [pdfExporting, setPdfExporting] = useState(false);
+
+  // A newly generated/refreshed report (new file, filter, or template) invalidates any cached
+  // AI summary — it was grounded on the previous result's numbers.
+  useEffect(() => {
+    setAiSummary(null);
+    setAiError(null);
+  }, [report]);
+
+  const handleOpenAiSummary = async () => {
+    setAiPanelOpen(true);
+    if (aiSummary || aiLoading) return; // already fetched for this report — don't re-call
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const result = await getReportAiSummary(report);
+      setAiSummary(result);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "Failed to generate AI summary.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    setPdfExporting(true);
+    try {
+      const blob = await exportReportPdf(
+        report,
+        aiSummary?.enabled ? aiSummary.summary : undefined,
+        aiSummary?.enabled ? aiSummary.insights : undefined
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(report.templateName ?? "report").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-report.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to export report PDF.", err);
+    } finally {
+      setPdfExporting(false);
+    }
+  };
+
   return (
     <Box>
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-        <Typography variant="h6" fontWeight={700}>{report.templateName ?? "Report"}</Typography>
+      <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} sx={{ mb: 1 }}>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <MuiTooltip title="AI Summary — a plain-language read of this report">
+            <IconButton
+              size="small"
+              onClick={handleOpenAiSummary}
+              color="primary"
+              aria-label="Open AI summary"
+              sx={{ border: "1px solid", borderColor: "primary.main" }}
+            >
+              <AiModeIcon fontSize="small" />
+            </IconButton>
+          </MuiTooltip>
+          <Typography variant="h6" fontWeight={700}>{report.templateName ?? "Report"}</Typography>
+        </Stack>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<PdfIcon />}
+          onClick={handleExportPdf}
+          disabled={pdfExporting || refreshing}
+        >
+          {pdfExporting ? "Exporting…" : "Export PDF"}
+        </Button>
       </Stack>
       {report.primaryTable && (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -1101,13 +1302,22 @@ function ReportResultsStep({
         }
       >
         {report.kpis.length > 0 && (
-          <Grid container spacing={2} sx={{ mb: 3 }}>
-            {report.kpis.map((kpi) => (
-              <Grid key={kpi.label} size={{ xs: 12, sm: 6, md: 3 }}>
-                <ReportKpiCard kpi={kpi} theme={theme} />
-              </Grid>
-            ))}
-          </Grid>
+          <>
+            <Typography
+              variant="subtitle2"
+              fontWeight={700}
+              sx={{ mb: 1, color: theme.mode === "dark" ? alpha("#FFFFFF", 0.7) : "text.secondary" }}
+            >
+              Key Metrics
+            </Typography>
+            <Grid container spacing={2} sx={{ mb: 3 }}>
+              {report.kpis.map((kpi) => (
+                <Grid key={kpi.label} size={{ xs: 12, sm: 6, md: 3 }}>
+                  <ReportKpiCard kpi={kpi} theme={theme} />
+                </Grid>
+              ))}
+            </Grid>
+          </>
         )}
 
         <Stack spacing={2}>
@@ -1116,6 +1326,14 @@ function ReportResultsStep({
           ))}
         </Stack>
       </Box>
+
+      <AiSummaryPanel
+        open={aiPanelOpen}
+        onClose={() => setAiPanelOpen(false)}
+        loading={aiLoading}
+        summary={aiSummary}
+        error={aiError}
+      />
     </Box>
   );
 }
