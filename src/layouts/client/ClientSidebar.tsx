@@ -22,6 +22,7 @@ import {
 import { useNavigate, useLocation } from 'react-router-dom';
 import { DRAWER_WIDTH, ROUTES } from '../../core/constants';
 import { NavigationItem } from '../../core/types';
+import { useClientBranding } from '../../core/clientBranding';
 
 interface ClientSidebarProps {
   open: boolean;
@@ -48,6 +49,7 @@ const SIDEBAR_TOP_OFFSET = 84;
 export const ClientSidebar = ({ open }: ClientSidebarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const branding = useClientBranding();
 
   const handleNavigation = (path: string) => {
     navigate(path);
@@ -87,6 +89,30 @@ export const ClientSidebar = ({ open }: ClientSidebarProps) => {
       }}
     >
       <Box sx={{ overflow: 'auto', pt: 2.5 }}>
+        {branding && (
+          <Box sx={{ px: 2.5, mb: 2.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box
+              component="img"
+              src={branding.logoUrl}
+              alt={`${branding.companyName} logo`}
+              sx={{
+                width: 44,
+                height: 44,
+                borderRadius: 1.5,
+                objectFit: 'contain',
+                bgcolor: alpha('#FFFFFF', 0.06),
+                p: 0.5,
+                flexShrink: 0,
+              }}
+            />
+            <Typography
+              variant="subtitle2"
+              sx={{ color: '#FFFFFF', fontWeight: 700, lineHeight: 1.2 }}
+            >
+              {branding.companyName}
+            </Typography>
+          </Box>
+        )}
         <Box sx={{ px: 2.5, mb: 2 }}>
           <Typography
             variant="overline"
