@@ -17,10 +17,16 @@ import {
   MenuItem,
   Snackbar,
 } from '@mui/material';
-import { ArrowBack, PersonAdd } from '@mui/icons-material';
+import { ArrowBack, PersonAdd, CloudUpload, Delete } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { getClientById, assignUserToClient, type ClientDetail } from '../../services/clientService';
+import { useEffect, useRef, useState } from 'react';
+import {
+  getClientById,
+  assignUserToClient,
+  uploadClientLogo,
+  deleteClientLogo,
+  type ClientDetail,
+} from '../../services/clientService';
 import { getAdminUsers } from '../../services/adminUserService';
 import { ROUTES } from '../../core/constants';
 
@@ -34,6 +40,8 @@ export const ClientDetailsPage = () => {
   const [assignUserId, setAssignUserId] = useState('');
   const [assignLoading, setAssignLoading] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
+  const [logoBusy, setLogoBusy] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!clientId) return;
@@ -73,6 +81,38 @@ export const ClientDetailsPage = () => {
       setSnackbar({ open: true, message: 'Failed to assign user', severity: 'error' });
     } finally {
       setAssignLoading(false);
+    }
+  };
+
+  const handleLogoFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    if (!file || !clientId) return;
+    try {
+      setLogoBusy(true);
+      await uploadClientLogo(clientId, file);
+      setSnackbar({ open: true, message: 'Logo uploaded.', severity: 'success' });
+      const data = await getClientById(clientId);
+      setClient(data);
+    } catch {
+      setSnackbar({ open: true, message: 'Failed to upload logo.', severity: 'error' });
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    if (!clientId) return;
+    try {
+      setLogoBusy(true);
+      await deleteClientLogo(clientId);
+      setSnackbar({ open: true, message: 'Logo removed — this client now uses default StudioTechBI branding.', severity: 'success' });
+      const data = await getClientById(clientId);
+      setClient(data);
+    } catch {
+      setSnackbar({ open: true, message: 'Failed to remove logo.', severity: 'error' });
+    } finally {
+      setLogoBusy(false);
     }
   };
 
@@ -155,6 +195,71 @@ export const ClientDetailsPage = () => {
           <Typography variant="body2">
             <strong>Created:</strong> {formatDate(client.createdAt)}
           </Typography>
+        </Box>
+      </Paper>
+
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+          Branding
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Upload a logo to white-label this client's portal — their top bar shows this logo and
+          "{client.name}" instead of StudioTechBI's own branding. Remove it to revert to default.
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+          <Box
+            sx={{
+              width: 64,
+              height: 64,
+              borderRadius: 1.5,
+              border: '1px solid',
+              borderColor: 'divider',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+              bgcolor: 'background.default',
+              flexShrink: 0,
+            }}
+          >
+            {client.logoUrl ? (
+              <Box component="img" src={client.logoUrl} alt={`${client.name} logo`} sx={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            ) : (
+              <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', px: 0.5 }}>
+                No logo
+              </Typography>
+            )}
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept=".png,.jpg,.jpeg,.svg"
+              hidden
+              onChange={handleLogoFileSelected}
+            />
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<CloudUpload />}
+              disabled={logoBusy}
+              onClick={() => logoInputRef.current?.click()}
+            >
+              {client.logoUrl ? 'Replace logo' : 'Upload logo'}
+            </Button>
+            {client.logoUrl && (
+              <Button
+                variant="outlined"
+                size="small"
+                color="error"
+                startIcon={<Delete />}
+                disabled={logoBusy}
+                onClick={handleRemoveLogo}
+              >
+                Remove
+              </Button>
+            )}
+          </Box>
         </Box>
       </Paper>
 

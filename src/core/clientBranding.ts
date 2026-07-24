@@ -1,15 +1,17 @@
-// White-label placeholder (Epic D1/D2 in the roadmap — not built yet).
-// Shape a real branding API would return: a client's own logo + company
-// name, swapped in for StudioTechBI's own wherever <Logo> is rendered
-// inside an authenticated session. There's no backend endpoint for this
-// yet, so this always returns null and every screen falls back to
-// StudioTechBI's own branding -- exactly today's behaviour, unchanged,
-// until a real premium-tier client has one to serve.
+import { useAuth } from '../auth/AuthContext';
+
+// A client's own logo + company name, swapped in for StudioTechBI's own wherever <Logo> is
+// rendered inside an authenticated session. Sourced from the login/refresh response (User.
+// companyName/logoUrl, set server-side only when an admin has uploaded a logo for that client
+// via Admin > Clients > Branding -- see AdminClientsController.UploadLogo). Returns null for
+// every client without one configured, which is the default StudioTechBI-branded experience.
 export interface ClientBranding {
   companyName: string;
   logoUrl: string;
 }
 
 export function useClientBranding(): ClientBranding | null {
-  return null;
+  const { user } = useAuth();
+  if (!user?.companyName || !user?.logoUrl) return null;
+  return { companyName: user.companyName, logoUrl: user.logoUrl };
 }

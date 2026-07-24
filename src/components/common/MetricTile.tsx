@@ -1,4 +1,5 @@
 import { Box, Typography } from '@mui/material';
+import type { ReactNode } from 'react';
 import { ACCENT_BLUE, ACCENT_VIOLET, BRASS } from '../../theme';
 
 // The "PROCESS / PHOSPHATING… pH 3.2 · 48°C" pattern: a small uppercase
@@ -12,7 +13,7 @@ export function MetricTile({
   accent = 'blue',
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   caption?: string;
   accent?: 'blue' | 'violet' | 'brass';
 }) {

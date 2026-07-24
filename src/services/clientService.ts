@@ -11,6 +11,8 @@ export interface Client {
   isActive?: boolean;
   createdAt?: string;
   templateVersion?: string;
+  /** Short-lived read URL for this client's white-label logo, undefined when none is set. */
+  logoUrl?: string;
 }
 
 export interface ClientDetail extends Client {
@@ -30,6 +32,7 @@ interface ClientDto {
   industry?: string | null;
   blobFolderPath?: string | null;
   templateVersion?: string | null;
+  logoUrl?: string | null;
   isActive?: boolean;
   createdDate?: string;
   powerBIWorkspaceId?: string | null;
@@ -65,6 +68,7 @@ function mapClientDto(dto: ClientDto): Client {
     isActive: active,
     createdAt: dto.createdDate,
     templateVersion: dto.templateVersion ?? undefined,
+    logoUrl: dto.logoUrl ?? undefined,
   };
 }
 
@@ -155,4 +159,23 @@ export async function deleteClient(clientId: string): Promise<void> {
 
 export async function assignUserToClient(clientId: string, userId: string): Promise<void> {
   await apiService.post(`/admin/clients/${clientId}/users/${userId}`);
+}
+
+/** Uploads (or replaces) a client's white-label logo. Returns the updated client, including a
+ * fresh logoUrl for preview. */
+export async function uploadClientLogo(clientId: string, file: File): Promise<Client> {
+  const form = new FormData();
+  form.append('file', file);
+  const raw = await apiService.post<unknown>(`/admin/clients/${clientId}/logo`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  const dto = unwrapData<ClientDto>(raw);
+  return mapClientDto(dto);
+}
+
+/** Removes a client's white-label logo -- their portal reverts to default StudioTechBI branding. */
+export async function deleteClientLogo(clientId: string): Promise<Client> {
+  const raw = await apiService.delete<unknown>(`/admin/clients/${clientId}/logo`);
+  const dto = unwrapData<ClientDto>(raw);
+  return mapClientDto(dto);
 }

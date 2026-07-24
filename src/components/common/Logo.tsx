@@ -2,9 +2,11 @@ import { Box, Typography } from '@mui/material';
 import { NAVY, BRASS } from '../../theme';
 import type { ClientBranding } from '../../core/clientBranding';
 
-// Ascending bars in a navy tile -- a BI/reporting mark, not a generic
-// briefcase or globe icon. Bar height/shade progression is deliberate:
-// reads as "growth" at any size down to a favicon.
+// "Blueprint Grid" -- one tall panel and two stacked side panels, the
+// asymmetric layout every generated report actually has, not an abstract
+// bar chart. The four-point spark in the top corner is the one concrete
+// nod to "generated" rather than "hand-built." Chunky shapes hold up
+// cleanly down to favicon size.
 export function LogoMark({ size = 40 }: { size?: number }) {
   return (
     <Box
@@ -13,9 +15,10 @@ export function LogoMark({ size = 40 }: { size?: number }) {
       sx={{ width: size, height: size, display: 'block', flexShrink: 0 }}
     >
       <rect width="40" height="40" rx="10" fill={NAVY[700]} />
-      <rect x="9" y="21" width="5" height="10" rx="1.5" fill={BRASS[300]} />
-      <rect x="17.5" y="15" width="5" height="16" rx="1.5" fill={BRASS[400]} />
-      <rect x="26" y="9" width="5" height="22" rx="1.5" fill={BRASS[500]} />
+      <rect x="7" y="7" width="15" height="26" rx="2.2" fill={BRASS[300]} />
+      <rect x="24" y="7" width="9" height="11" rx="2" fill={BRASS[400]} />
+      <rect x="24" y="20" width="9" height="13" rx="2" fill={BRASS[500]} />
+      <path d="M18.5 5.2 L19.9 8.4 L23.1 9.8 L19.9 11.2 L18.5 14.4 L17.1 11.2 L13.9 9.8 L17.1 8.4 Z" fill={BRASS[100]} />
     </Box>
   );
 }
