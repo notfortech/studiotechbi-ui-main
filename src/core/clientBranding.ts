@@ -1,10 +1,11 @@
 import { useAuth } from '../auth/AuthContext';
 
-// A client's own logo + company name, swapped in for StudioTechBI's own wherever <Logo> is
-// rendered inside an authenticated session. Sourced from the login/refresh response (User.
-// companyName/logoUrl, set server-side only when an admin has uploaded a logo for that client
-// via Admin > Clients > Branding -- see AdminClientsController.UploadLogo). Returns null for
-// every client without one configured, which is the default StudioTechBI-branded experience.
+// A client's own logo + company name, shown prominently alongside (not instead of) StudioTechBI's
+// own branding inside an authenticated session -- see ClientSidebar. Sourced from the login/
+// refresh response (User.companyName/logoUrl), which the server only populates when the client is
+// both marked as a premium subscriber AND has a logo uploaded via Admin > Clients > Branding (see
+// AuthService.MapUserToDtoAsync, AdminClientsController.UploadLogo). Returns null for every other
+// client, which is the default StudioTechBI-only-branded experience.
 export interface ClientBranding {
   companyName: string;
   logoUrl: string;

@@ -16,6 +16,8 @@ import {
   Select,
   MenuItem,
   Snackbar,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import { ArrowBack, PersonAdd, CloudUpload, Delete } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -25,6 +27,7 @@ import {
   assignUserToClient,
   uploadClientLogo,
   deleteClientLogo,
+  updateClient,
   type ClientDetail,
 } from '../../services/clientService';
 import { getAdminUsers } from '../../services/adminUserService';
@@ -41,6 +44,7 @@ export const ClientDetailsPage = () => {
   const [assignLoading, setAssignLoading] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
   const [logoBusy, setLogoBusy] = useState(false);
+  const [premiumBusy, setPremiumBusy] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -113,6 +117,27 @@ export const ClientDetailsPage = () => {
       setSnackbar({ open: true, message: 'Failed to remove logo.', severity: 'error' });
     } finally {
       setLogoBusy(false);
+    }
+  };
+
+  const handleTogglePremium = async (checked: boolean) => {
+    if (!clientId) return;
+    try {
+      setPremiumBusy(true);
+      await updateClient(clientId, { isPremiumSubscriber: checked });
+      setSnackbar({
+        open: true,
+        message: checked
+          ? 'Client marked as a premium subscriber — their branding will now show once a logo is uploaded.'
+          : 'Client is no longer marked as a premium subscriber — their branding is now hidden.',
+        severity: 'success',
+      });
+      const data = await getClientById(clientId);
+      setClient(data);
+    } catch {
+      setSnackbar({ open: true, message: 'Failed to update premium status.', severity: 'error' });
+    } finally {
+      setPremiumBusy(false);
     }
   };
 
@@ -203,9 +228,22 @@ export const ClientDetailsPage = () => {
           Branding
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Upload a logo to white-label this client's portal — their top bar shows this logo and
-          "{client.name}" instead of StudioTechBI's own branding. Remove it to revert to default.
+          Upload a logo to white-label this client's portal — once they're marked as a premium
+          subscriber, their logo appears prominently throughout their portal (StudioTechBI's own
+          logo always remains visible too). Remove the logo, or turn off premium status, to
+          revert to default branding only.
         </Typography>
+        <FormControlLabel
+          sx={{ mb: 2 }}
+          control={
+            <Switch
+              checked={client.isPremiumSubscriber ?? false}
+              disabled={premiumBusy}
+              onChange={(e) => handleTogglePremium(e.target.checked)}
+            />
+          }
+          label="Premium subscriber (enables white-label branding)"
+        />
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
           <Box
             sx={{

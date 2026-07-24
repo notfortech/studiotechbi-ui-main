@@ -13,6 +13,9 @@ export interface Client {
   templateVersion?: string;
   /** Short-lived read URL for this client's white-label logo, undefined when none is set. */
   logoUrl?: string;
+  /** Admin-declared entitlement — branding only actually renders for this client's users when
+   * this is true AND a logo is set. */
+  isPremiumSubscriber?: boolean;
 }
 
 export interface ClientDetail extends Client {
@@ -33,6 +36,7 @@ interface ClientDto {
   blobFolderPath?: string | null;
   templateVersion?: string | null;
   logoUrl?: string | null;
+  isPremiumSubscriber?: boolean;
   isActive?: boolean;
   createdDate?: string;
   powerBIWorkspaceId?: string | null;
@@ -69,6 +73,7 @@ function mapClientDto(dto: ClientDto): Client {
     createdAt: dto.createdDate,
     templateVersion: dto.templateVersion ?? undefined,
     logoUrl: dto.logoUrl ?? undefined,
+    isPremiumSubscriber: dto.isPremiumSubscriber ?? false,
   };
 }
 
@@ -125,18 +130,37 @@ export async function createClient(body: CreateClientBody): Promise<Client> {
   return mapClientDto(dto);
 }
 
+/** The backend's PUT replaces the whole record from the DTO it's sent (no partial-patch
+ * semantics), so every update fetches the client's current state first and merges the
+ * caller's changes on top -- otherwise fields the caller doesn't know about (like
+ * isPremiumSubscriber) would silently reset to their default. */
 export async function updateClient(
   clientId: string,
-  body: Partial<CreateClientBody & { status: string; isActive?: boolean }>
+  body: Partial<CreateClientBody & { status: string; isActive?: boolean; isPremiumSubscriber?: boolean }>
 ): Promise<Client> {
-  const payload: Record<string, unknown> = {};
-  if (body.name != null) payload.clientName = body.name.trim();
-  if (body.industry !== undefined) payload.industry = body.industry?.trim() || undefined;
-  if (body.templateVersion !== undefined) payload.templateVersion = body.templateVersion?.trim() || undefined;
-  if (body.clientCode != null) payload.clientCode = body.clientCode.trim();
-  if (body.status === 'disabled') payload.isActive = false;
-  if (body.status === 'active') payload.isActive = true;
-  if (body.isActive !== undefined) payload.isActive = body.isActive;
+  const current = await getClientById(clientId);
+
+  const name = body.name != null ? body.name.trim() : current.name;
+  const industry = body.industry !== undefined ? body.industry?.trim() || undefined : current.industry;
+  const templateVersion =
+    body.templateVersion !== undefined ? body.templateVersion?.trim() || undefined : current.templateVersion;
+  const clientCode = body.clientCode != null ? body.clientCode.trim() : current.clientCode;
+  const isPremiumSubscriber =
+    body.isPremiumSubscriber !== undefined ? body.isPremiumSubscriber : current.isPremiumSubscriber ?? false;
+
+  let isActive = current.isActive ?? true;
+  if (body.status === 'disabled') isActive = false;
+  if (body.status === 'active') isActive = true;
+  if (body.isActive !== undefined) isActive = body.isActive;
+
+  const payload: Record<string, unknown> = {
+    clientName: name,
+    industry,
+    templateVersion,
+    clientCode,
+    isPremiumSubscriber,
+    isActive,
+  };
 
   const raw = await apiService.put<unknown>(`/admin/clients/${clientId}`, payload);
   const dto = unwrapData<ClientDto>(raw);
@@ -149,6 +173,8 @@ export async function disableClient(clientId: string): Promise<void> {
     clientName: detail.name,
     industry: detail.industry,
     templateVersion: detail.templateVersion,
+    clientCode: detail.clientCode,
+    isPremiumSubscriber: detail.isPremiumSubscriber ?? false,
     isActive: false,
   });
 }

@@ -16,7 +16,6 @@ import { useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { DRAWER_WIDTH } from '../../core/constants';
 import { Logo } from '../../components/common/Logo';
-import { useClientBranding } from '../../core/clientBranding';
 
 interface ClientTopBarProps {
   open: boolean;
@@ -25,7 +24,6 @@ interface ClientTopBarProps {
 
 export const ClientTopBar = ({ open, onToggleDrawer }: ClientTopBarProps) => {
   const { user, logout } = useAuth();
-  const branding = useClientBranding();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   const handleMenu = (event: React.MouseEvent<HTMLElement>) => {
@@ -68,7 +66,9 @@ export const ClientTopBar = ({ open, onToggleDrawer }: ClientTopBarProps) => {
           <MenuIcon />
         </IconButton>
         <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Logo size={30} textColor="#FFFFFF" branding={branding} />
+          {/* Always StudioTechBI's own mark -- client branding (when premium) is shown
+           * prominently in the sidebar instead, not by replacing this. */}
+          <Logo size={30} textColor="#FFFFFF" />
           {user?.clientCode && (
             <Typography component="span" variant="body2" sx={{ opacity: 0.85 }}>
               — {user.clientName || user.clientCode}
