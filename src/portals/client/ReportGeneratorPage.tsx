@@ -1174,6 +1174,7 @@ function ReportResultsStep({
   return (
     <Box>
       <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} sx={{ mb: 1 }}>
+        <Typography variant="h6" fontWeight={700}>{report.templateName ?? "Report"}</Typography>
         <Stack direction="row" spacing={1} alignItems="center">
           <MuiTooltip title="AI Summary — a plain-language read of this report">
             <IconButton
@@ -1186,17 +1187,16 @@ function ReportResultsStep({
               <AiModeIcon fontSize="small" />
             </IconButton>
           </MuiTooltip>
-          <Typography variant="h6" fontWeight={700}>{report.templateName ?? "Report"}</Typography>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<PdfIcon />}
+            onClick={handleExportPdf}
+            disabled={pdfExporting || refreshing}
+          >
+            {pdfExporting ? "Exporting…" : "Export PDF"}
+          </Button>
         </Stack>
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<PdfIcon />}
-          onClick={handleExportPdf}
-          disabled={pdfExporting || refreshing}
-        >
-          {pdfExporting ? "Exporting…" : "Export PDF"}
-        </Button>
       </Stack>
       {report.primaryTable && (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
