@@ -118,11 +118,17 @@ export async function generateReport(
  * AiSummaryPanel component, since Blueprint Generator's "Ask AI Assistant" reuses both. */
 export type { AiSummary as ReportAiSummary } from '../components/common/AiSummaryPanel';
 
-export async function getReportAiSummary(report: GeneratedReport): Promise<AiSummary> {
+/** `question`, when supplied, asks that specific follow-up instead of the general
+ * "explain this report" summary — used by AiSummaryPanel's clickable follow-up chips. */
+export async function getReportAiSummary(report: GeneratedReport, question?: string): Promise<AiSummary> {
   try {
     // Not wrapped in ApiResponse<T> — mirrors ReportsController's /reports/ai-insights
     // shape, which returns { enabled, ... } directly rather than the standard envelope.
-    const res = await apiAxiosInstance.post<AiSummary>('/report-generator/ai-summary', report);
+    const res = await apiAxiosInstance.post<AiSummary>(
+      '/report-generator/ai-summary',
+      report,
+      question ? { params: { question } } : undefined
+    );
     return res.data;
   } catch (err) {
     throw err instanceof Error ? err : apiError(err, 'Failed to generate AI summary.');

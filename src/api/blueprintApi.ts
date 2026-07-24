@@ -163,8 +163,13 @@ export async function deleteBlueprint(blueprintId: string): Promise<void> {
 }
 
 /** "Ask AI Assistant" — a plain-language explanation of this blueprint, grounded on its own
- * already-generated JSON. Same InsightsEngine proxy pattern as Report Generator's AI summary. */
-export async function getBlueprintAiSummary(blueprintId: string): Promise<AiSummary> {
-  const res = await apiAxiosInstance.post<AiSummary>(`/blueprints/${blueprintId}/ai-summary`);
+ * already-generated JSON. Same InsightsEngine proxy pattern as Report Generator's AI summary.
+ * `question`, when supplied, asks that specific follow-up instead of the general explanation. */
+export async function getBlueprintAiSummary(blueprintId: string, question?: string): Promise<AiSummary> {
+  const res = await apiAxiosInstance.post<AiSummary>(
+    `/blueprints/${blueprintId}/ai-summary`,
+    undefined,
+    question ? { params: { question } } : undefined
+  );
   return res.data;
 }

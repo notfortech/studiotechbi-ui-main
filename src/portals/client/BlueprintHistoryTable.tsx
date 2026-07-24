@@ -180,6 +180,9 @@ export function BlueprintHistoryTable({ blueprints }: Props) {
         summary={activeAiBlueprintId ? aiSummaries[activeAiBlueprintId] ?? null : null}
         error={aiError}
         title="AI Assistant"
+        onAskFollowUp={
+          activeAiBlueprintId ? (question) => getBlueprintAiSummary(activeAiBlueprintId, question) : undefined
+        }
       />
     </Box>
   );
