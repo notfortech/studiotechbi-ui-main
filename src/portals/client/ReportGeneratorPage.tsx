@@ -1256,6 +1256,7 @@ function ReportResultsStep({
         loading={aiLoading}
         summary={aiSummary}
         error={aiError}
+        onAskFollowUp={(question) => getReportAiSummary(report, question)}
       />
     </Box>
   );
