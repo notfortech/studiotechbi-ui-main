@@ -14,6 +14,12 @@ export interface User {
   clientCode?: string;
   /** Client display name when user belongs to a client. */
   clientName?: string;
+  /** White-label company display name -- only set (together with logoUrl) when the client has a
+   * logo configured. See useClientBranding() in core/clientBranding.ts. */
+  companyName?: string;
+  /** Short-lived read SAS URL for the client's uploaded white-label logo. Undefined when no logo
+   * is configured -- default StudioTechBI branding applies. Refreshed on every login/token refresh. */
+  logoUrl?: string;
   hasAIInsights?: boolean;
   /** True when the user's plan includes Blueprint Generation. Controlled from the backend/Azure user mapping. */
   hasBlueprints?: boolean;
