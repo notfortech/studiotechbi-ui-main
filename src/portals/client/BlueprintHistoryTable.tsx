@@ -15,13 +15,16 @@ import {
 import {
   Download as DownloadIcon,
   DataObject as JsonIcon,
+  AutoAwesome as AiAssistantIcon,
 } from "@mui/icons-material";
 import { useState } from "react";
 import {
   downloadBlueprintPdf,
   downloadBlueprintJson,
+  getBlueprintAiSummary,
   type BlueprintDto,
 } from "../../api/blueprintApi";
+import { AiSummaryPanel, type AiSummary } from "../../components/common/AiSummaryPanel";
 
 interface Props {
   blueprints: BlueprintDto[];
@@ -37,6 +40,28 @@ const BLUEPRINT_STATUS_COLOR: Record<string, ChipColor> = {
 export function BlueprintHistoryTable({ blueprints }: Props) {
   const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null);
   const [downloadingJson, setDownloadingJson] = useState<string | null>(null);
+
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [aiLoadingId, setAiLoadingId] = useState<string | null>(null);
+  const [aiSummaries, setAiSummaries] = useState<Record<string, AiSummary>>({});
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [activeAiBlueprintId, setActiveAiBlueprintId] = useState<string | null>(null);
+
+  const handleAskAi = async (blueprint: BlueprintDto) => {
+    setActiveAiBlueprintId(blueprint.id);
+    setAiPanelOpen(true);
+    setAiError(null);
+    if (aiSummaries[blueprint.id]) return; // already fetched — don't re-call
+    setAiLoadingId(blueprint.id);
+    try {
+      const result = await getBlueprintAiSummary(blueprint.id);
+      setAiSummaries((prev) => ({ ...prev, [blueprint.id]: result }));
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "Failed to generate AI summary.");
+    } finally {
+      setAiLoadingId(null);
+    }
+  };
 
   const handlePdfDownload = async (blueprint: BlueprintDto) => {
     setDownloadingPdf(blueprint.id);
@@ -107,6 +132,16 @@ export function BlueprintHistoryTable({ blueprints }: Props) {
                     {bp.activeVersion?.hasJson && (
                       <Button
                         size="small"
+                        startIcon={<AiAssistantIcon />}
+                        disabled={aiLoadingId === bp.id}
+                        onClick={() => handleAskAi(bp)}
+                      >
+                        {aiLoadingId === bp.id ? "…" : "Ask AI Assistant"}
+                      </Button>
+                    )}
+                    {bp.activeVersion?.hasJson && (
+                      <Button
+                        size="small"
                         startIcon={<JsonIcon />}
                         disabled={downloadingJson === bp.id}
                         onClick={() => handleJsonDownload(bp)}
@@ -137,6 +172,15 @@ export function BlueprintHistoryTable({ blueprints }: Props) {
           </TableBody>
         </Table>
       </TableContainer>
+
+      <AiSummaryPanel
+        open={aiPanelOpen}
+        onClose={() => setAiPanelOpen(false)}
+        loading={aiLoadingId === activeAiBlueprintId && aiLoadingId !== null}
+        summary={activeAiBlueprintId ? aiSummaries[activeAiBlueprintId] ?? null : null}
+        error={aiError}
+        title="AI Assistant"
+      />
     </Box>
   );
 }

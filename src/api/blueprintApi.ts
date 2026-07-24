@@ -1,5 +1,6 @@
 import { apiAxiosInstance } from '../services/apiClient';
 import { AxiosError } from 'axios';
+import type { AiSummary } from '../components/common/AiSummaryPanel';
 
 // ── V2 Request types ────────────────────────────────────────────────────────
 
@@ -159,4 +160,11 @@ export async function downloadBlueprintJson(blueprintId: string): Promise<string
 
 export async function deleteBlueprint(blueprintId: string): Promise<void> {
   await apiAxiosInstance.delete(`/blueprints/${blueprintId}`);
+}
+
+/** "Ask AI Assistant" — a plain-language explanation of this blueprint, grounded on its own
+ * already-generated JSON. Same InsightsEngine proxy pattern as Report Generator's AI summary. */
+export async function getBlueprintAiSummary(blueprintId: string): Promise<AiSummary> {
+  const res = await apiAxiosInstance.post<AiSummary>(`/blueprints/${blueprintId}/ai-summary`);
+  return res.data;
 }
