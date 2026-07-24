@@ -1,5 +1,6 @@
 import { apiAxiosInstance } from '../services/apiClient';
 import { AxiosError } from 'axios';
+import type { AiSummary } from '../components/common/AiSummaryPanel';
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────
 // Mirrors koru-main's ReportGeneratorDtos.cs, which mirrors
@@ -113,20 +114,15 @@ export async function generateReport(
 // ── AI summary + PDF export ──────────────────────────────────────────────────
 // Both operate on an already-generated report — no re-upload of the source file.
 
-export interface ReportAiSummary {
-  enabled: boolean;
-  message?: string;
-  provider?: string;
-  summary?: string;
-  insights?: string[];
-  followUps?: string[];
-}
+/** Re-exported for backward compatibility — the canonical type now lives alongside the shared
+ * AiSummaryPanel component, since Blueprint Generator's "Ask AI Assistant" reuses both. */
+export type { AiSummary as ReportAiSummary } from '../components/common/AiSummaryPanel';
 
-export async function getReportAiSummary(report: GeneratedReport): Promise<ReportAiSummary> {
+export async function getReportAiSummary(report: GeneratedReport): Promise<AiSummary> {
   try {
     // Not wrapped in ApiResponse<T> — mirrors ReportsController's /reports/ai-insights
     // shape, which returns { enabled, ... } directly rather than the standard envelope.
-    const res = await apiAxiosInstance.post<ReportAiSummary>('/report-generator/ai-summary', report);
+    const res = await apiAxiosInstance.post<AiSummary>('/report-generator/ai-summary', report);
     return res.data;
   } catch (err) {
     throw err instanceof Error ? err : apiError(err, 'Failed to generate AI summary.');
