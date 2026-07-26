@@ -46,6 +46,7 @@ import {
   Timeline as AreaFormatIcon,
   SmartToy as AiConsentIcon,
   PictureAsPdf as PdfIcon,
+  FactCheck as VerifyMatchIcon,
 } from "@mui/icons-material";
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "../../auth/AuthContext";
@@ -78,12 +79,14 @@ import {
   matchSchemaModel,
   recordDataUsageConsent,
   generateDashboardTemplate,
+  verifyTemplateMatch,
   type ExtractedSchemaDto,
   type GenerateReportModelResponse,
   type StarSchema,
   type TableInfo,
   type ReportMatchResult,
   type GenerateDashboardTemplateResponse,
+  type VerifyTemplateMatchResponse,
   type AiProvider,
 } from "../../api/reportDesignerApi";
 import {
@@ -541,6 +544,7 @@ function DataModelStep({
   matching, matchError, matchResult, dataConsentRecordedAt, dataConsentDeciding, dataConsentError, onOpenDataConsent,
   onCancelGeneration,
   generatingTemplate, templateError, templateResult, onGenerateTemplate,
+  verifyingMatch, matchVerifyError, matchVerification, onVerifyMatch,
 }: {
   extractedSchema: ExtractedSchemaDto;
   modelResult: GenerateReportModelResponse | null;
@@ -559,6 +563,10 @@ function DataModelStep({
   templateError: string | null;
   templateResult: GenerateDashboardTemplateResponse | null;
   onGenerateTemplate: () => void;
+  verifyingMatch: boolean;
+  matchVerifyError: string | null;
+  matchVerification: VerifyTemplateMatchResponse | null;
+  onVerifyMatch: () => void;
 }) {
   const { elapsedSeconds, pct } = useTimedProgress(generating);
   const pastHardCeiling = elapsedSeconds > AI_HARD_CEILING_SECONDS;
@@ -630,19 +638,53 @@ function DataModelStep({
               ) : (
                 <Stack spacing={1}>
                   {templateError && <Alert severity="error">{templateError}</Alert>}
-                  <Button
-                    variant="contained"
-                    startIcon={generatingTemplate ? <CircularProgress size={16} color="inherit" /> : <AiConsentIcon />}
-                    disabled={generatingTemplate}
-                    onClick={onGenerateTemplate}
-                    sx={{ alignSelf: "flex-start" }}
-                  >
-                    {generatingTemplate ? "Generating Dashboard Template…" : "Generate Dashboard Template"}
-                  </Button>
+                  {matchVerifyError && <Alert severity="error">{matchVerifyError}</Alert>}
+                  {matchVerification && (
+                    <Alert severity={
+                      matchVerification.status === "Matched" ? "success"
+                        : matchVerification.status === "Error" ? "error"
+                        : "info"
+                    }>
+                      {matchVerification.message}
+                      {matchVerification.candidates.length > 0 && (
+                        <Stack direction="row" spacing={0.75} flexWrap="wrap" gap={0.75} sx={{ mt: 1 }}>
+                          {matchVerification.candidates.map((c) => (
+                            <Chip
+                              key={c.templateId}
+                              size="small"
+                              variant={c.templateId === matchVerification.matchedTemplateId ? "filled" : "outlined"}
+                              color={c.templateId === matchVerification.matchedTemplateId ? "success" : "default"}
+                              label={`${c.templateName} (${Math.round(c.confidence * 100)}%)`}
+                            />
+                          ))}
+                        </Stack>
+                      )}
+                    </Alert>
+                  )}
+                  <Stack direction="row" spacing={1.5}>
+                    <Button
+                      variant="outlined"
+                      startIcon={verifyingMatch ? <CircularProgress size={16} color="inherit" /> : <VerifyMatchIcon />}
+                      disabled={verifyingMatch}
+                      onClick={onVerifyMatch}
+                      sx={{ alignSelf: "flex-start" }}
+                    >
+                      {verifyingMatch ? "Checking for a template match…" : "Verify Template Match"}
+                    </Button>
+                    <Button
+                      variant="contained"
+                      startIcon={generatingTemplate ? <CircularProgress size={16} color="inherit" /> : <AiConsentIcon />}
+                      disabled={generatingTemplate || matchVerification?.status !== "Matched"}
+                      onClick={onGenerateTemplate}
+                      sx={{ alignSelf: "flex-start" }}
+                    >
+                      {generatingTemplate ? "Generating Dashboard Template…" : "Generate Dashboard Template"}
+                    </Button>
+                  </Stack>
                   <Typography variant="caption" color="text.secondary">
-                    Blends your uploaded data with mock data for any missing fields, generates a real
-                    Power BI report with visuals, and publishes it to your workspace. This can take a
-                    few minutes.
+                    {matchVerification?.status === "Matched"
+                      ? "Blends your uploaded data with mock data for any missing fields, clones the matched template, and publishes it to your workspace. This can take a few minutes."
+                      : "Check whether a ready-made template already matches your data before generating — enables once a confident match is found."}
                   </Typography>
                 </Stack>
               )}
@@ -1360,6 +1402,13 @@ export function ReportGeneratorPage() {
   const [templateResult, setTemplateResult] = useState<GenerateDashboardTemplateResponse | null>(null);
   const templateAbortRef = useRef<AbortController | null>(null);
 
+  // Cheap pre-check gating "Generate Dashboard Template" — only enabled once this comes back
+  // "Matched", so the client isn't left waiting on the slower generate call for nothing.
+  const [verifyingMatch, setVerifyingMatch] = useState(false);
+  const [matchVerifyError, setMatchVerifyError] = useState<string | null>(null);
+  const [matchVerification, setMatchVerification] = useState<VerifyTemplateMatchResponse | null>(null);
+  const matchVerifyAbortRef = useRef<AbortController | null>(null);
+
   const [selectedTheme, setSelectedTheme] = useState<number | null>(null);
 
   const [report, setReport] = useState<GeneratedReport | null>(null);
@@ -1507,6 +1556,23 @@ export function ReportGeneratorPage() {
     }
   }
 
+  async function handleVerifyMatch() {
+    if (!modelResult?.blueprint || !uploadedFile) return;
+    setVerifyingMatch(true);
+    setMatchVerifyError(null);
+    const controller = new AbortController();
+    matchVerifyAbortRef.current = controller;
+    try {
+      const result = await verifyTemplateMatch(clientId, uploadedFile, modelResult.blueprint, controller.signal);
+      setMatchVerification(result);
+    } catch (err) {
+      setMatchVerifyError(err instanceof Error ? err.message : "Failed to verify template match.");
+    } finally {
+      setVerifyingMatch(false);
+      matchVerifyAbortRef.current = null;
+    }
+  }
+
   function handleOpenDataConsent() {
     setDataConsentError(null);
     setDataConsentDialogOpen(true);
@@ -1592,6 +1658,9 @@ export function ReportGeneratorPage() {
     setDataConsentError(null);
     setTemplateResult(null);
     setTemplateError(null);
+    matchVerifyAbortRef.current?.abort();
+    setMatchVerification(null);
+    setMatchVerifyError(null);
   }
 
   const theme = REPORT_THEMES[selectedTheme ?? 0];
@@ -1653,6 +1722,10 @@ export function ReportGeneratorPage() {
             templateError={templateError}
             templateResult={templateResult}
             onGenerateTemplate={handleGenerateTemplate}
+            verifyingMatch={verifyingMatch}
+            matchVerifyError={matchVerifyError}
+            matchVerification={matchVerification}
+            onVerifyMatch={handleVerifyMatch}
           />
         )}
 
