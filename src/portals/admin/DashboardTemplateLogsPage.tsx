@@ -39,7 +39,22 @@ export const DashboardTemplateLogsPage = () => {
   }, []);
 
   const formatDate = (d?: string) => (d ? new Date(d).toLocaleString() : '—');
-  const isFailure = (eventType?: string) => eventType === 'DashboardTemplateGenerationFailed';
+
+  type StatusDisplay = { label: string; color: 'success' | 'error' | 'warning' };
+
+  const statusFor = (eventType?: string): StatusDisplay => {
+    switch (eventType) {
+      case 'DashboardTemplateGenerationFailed':
+        return { label: 'Failed', color: 'error' };
+      case 'DashboardTemplateBuildRequested':
+        return { label: 'Needs Template', color: 'warning' };
+      case 'DashboardTemplateMatchCheckFailed':
+        return { label: 'Error', color: 'error' };
+      case 'DashboardTemplateGenerated':
+      default:
+        return { label: 'Success', color: 'success' };
+    }
+  };
 
   if (error) {
     return (
@@ -87,26 +102,25 @@ export const DashboardTemplateLogsPage = () => {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  logs.map((log, idx) => (
-                    <TableRow key={(log as { id?: string }).id ?? idx} hover>
-                      <TableCell>
-                        <Chip
-                          label={isFailure(log.eventType) ? 'Failed' : 'Success'}
-                          size="small"
-                          color={isFailure(log.eventType) ? 'error' : 'success'}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Typography
-                          variant="body2"
-                          sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: 12 }}
-                        >
-                          {log.description ?? '—'}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>{formatDate(log.timestamp)}</TableCell>
-                    </TableRow>
-                  ))
+                  logs.map((log, idx) => {
+                    const status = statusFor(log.eventType);
+                    return (
+                      <TableRow key={(log as { id?: string }).id ?? idx} hover>
+                        <TableCell>
+                          <Chip label={status.label} size="small" color={status.color} />
+                        </TableCell>
+                        <TableCell>
+                          <Typography
+                            variant="body2"
+                            sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: 12 }}
+                          >
+                            {log.description ?? '—'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>{formatDate(log.timestamp)}</TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

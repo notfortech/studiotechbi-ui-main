@@ -159,6 +159,37 @@ export interface GenerateDashboardTemplateResponse {
   designBlueprintTemplateId: string | null;
   designBlueprintTier: string | null;
   designBlueprintLabel: string | null;
+  /** "MatchedTemplate" when a real published template was found and cloned, "PendingTemplateBuild"
+   *  when no confident match was found (a build request was filed for the team), or
+   *  "MatchCheckFailed" when the match check or clone itself failed technically. */
+  source: string;
+  matchedTemplateId: string | null;
+  matchedTemplateName: string | null;
+  matchConfidence: number | null;
+}
+
+// ── Verify Template Match (cheap pre-check, no TMDL authoring / Power BI deploy) ──────────────
+
+export type VerifyTemplateMatchStatus = 'Matched' | 'Pending' | 'Error';
+
+export interface TemplateCandidateSummary {
+  templateId: string;
+  templateName: string;
+  confidence: number;
+  isPublishReady: boolean;
+}
+
+export interface VerifyTemplateMatchResponse {
+  correlationId: string;
+  status: VerifyTemplateMatchStatus;
+  message: string;
+  provenance: ProvenanceEntry[];
+  blendedDatasetBlobPath: string | null;
+  blendedDatasetDownloadUrl: string | null;
+  matchedTemplateId: string | null;
+  matchedTemplateName: string | null;
+  matchConfidence: number | null;
+  candidates: TemplateCandidateSummary[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -437,5 +468,39 @@ export async function generateDashboardTemplate(
     return extractData(res.data);
   } catch (err) {
     throw aiCallError(err, 'Failed to generate dashboard template.');
+  }
+}
+
+/**
+ * Dashboard Template Generator — POST /dashboard-template/verify-match. A cheap pre-check that
+ * blends the file and checks the real template catalog for a match, without authoring a TMDL or
+ * making any Power BI calls — meant to gate generateDashboardTemplate so the client only commits
+ * to the slower call once this comes back with status "Matched". Same multipart contract and
+ * timeout budget as generateDashboardTemplate, since the blend step itself is the same work.
+ */
+export async function verifyTemplateMatch(
+  clientId: string,
+  file: File,
+  blueprint: unknown,
+  signal?: AbortSignal
+): Promise<VerifyTemplateMatchResponse> {
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('clientId', clientId);
+    form.append('blueprint', JSON.stringify(blueprint));
+
+    const res = await apiAxiosInstance.post<ApiResponse<VerifyTemplateMatchResponse>>(
+      '/dashboard-template/verify-match',
+      form,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: DASHBOARD_TEMPLATE_TIMEOUT_MS,
+        signal,
+      }
+    );
+    return extractData(res.data);
+  } catch (err) {
+    throw aiCallError(err, 'Failed to verify template match.');
   }
 }
