@@ -45,6 +45,7 @@ export const ClientDetailsPage = () => {
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
   const [logoBusy, setLogoBusy] = useState(false);
   const [premiumBusy, setPremiumBusy] = useState(false);
+  const [reportValidationBusy, setReportValidationBusy] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -138,6 +139,27 @@ export const ClientDetailsPage = () => {
       setSnackbar({ open: true, message: 'Failed to update premium status.', severity: 'error' });
     } finally {
       setPremiumBusy(false);
+    }
+  };
+
+  const handleToggleReportValidation = async (checked: boolean) => {
+    if (!clientId) return;
+    try {
+      setReportValidationBusy(true);
+      await updateClient(clientId, { hasReportValidationAddOn: checked });
+      setSnackbar({
+        open: true,
+        message: checked
+          ? 'Report Validation add-on enabled — the client can now validate generated reports.'
+          : 'Report Validation add-on disabled — the client no longer sees the Validate Report option.',
+        severity: 'success',
+      });
+      const data = await getClientById(clientId);
+      setClient(data);
+    } catch {
+      setSnackbar({ open: true, message: 'Failed to update Report Validation entitlement.', severity: 'error' });
+    } finally {
+      setReportValidationBusy(false);
     }
   };
 
@@ -299,6 +321,27 @@ export const ClientDetailsPage = () => {
             )}
           </Box>
         </Box>
+      </Paper>
+
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+          Add-ons
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Report Validation is a separate paid add-on from branding — once enabled, this client
+          can run an on-demand check confirming a generated report renders correctly and its data
+          looks trustworthy.
+        </Typography>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={client.hasReportValidationAddOn ?? false}
+              disabled={reportValidationBusy}
+              onChange={(e) => handleToggleReportValidation(e.target.checked)}
+            />
+          }
+          label="Report Validation add-on"
+        />
       </Paper>
 
       {client.uploads && client.uploads.length > 0 && (

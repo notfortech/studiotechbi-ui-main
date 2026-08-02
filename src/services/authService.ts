@@ -44,6 +44,7 @@ function normalizeAuthPayload(response: any): {
     logoUrl: data.user.logoUrl ?? undefined,
     hasAIInsights: !!data.user.hasAIInsights,
     hasBlueprints: !!data.user.hasBlueprints,
+    hasReportValidationAddOn: !!data.user.hasReportValidationAddOn,
   };
   return {
     user,

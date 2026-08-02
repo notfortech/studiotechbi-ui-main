@@ -18,17 +18,19 @@ import {
   AccountCircle as ProfileIcon,
   AutoAwesome as BlueprintIcon,
   AutoGraph as ReportGeneratorIcon,
+  VerifiedOutlined as ReportValidationIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { DRAWER_WIDTH, ROUTES } from '../../core/constants';
 import { NavigationItem } from '../../core/types';
 import { useClientBranding } from '../../core/clientBranding';
+import { useAuth } from '../../auth/AuthContext';
 
 interface ClientSidebarProps {
   open: boolean;
 }
 
-const navigationItems: NavigationItem[] = [
+const BASE_NAVIGATION_ITEMS: NavigationItem[] = [
   { id: 'dashboard', title: 'Dashboard', path: ROUTES.CLIENT.DASHBOARD, icon: <DashboardIcon /> },
   { id: 'reports', title: 'Reports', path: ROUTES.CLIENT.REPORTS, icon: <AssessmentIcon /> },
   { id: 'blueprint', title: 'Generate Blueprint', path: ROUTES.CLIENT.BLUEPRINT, icon: <BlueprintIcon /> },
@@ -36,6 +38,13 @@ const navigationItems: NavigationItem[] = [
   { id: 'propositions', title: 'Propositions', path: ROUTES.CLIENT.PROPOSITIONS, icon: <DescriptionIcon /> },
   { id: 'profile', title: 'Profile', path: ROUTES.CLIENT.PROFILE, icon: <ProfileIcon /> },
 ];
+
+const REPORT_VALIDATION_NAV_ITEM: NavigationItem = {
+  id: 'report-validation',
+  title: 'Report Validation',
+  path: ROUTES.CLIENT.REPORT_VALIDATION,
+  icon: <ReportValidationIcon />,
+};
 
 const INACTIVE_TEXT = alpha('#FFFFFF', 0.7);
 const ACCENT = '#C99C55'; // brass — the one accent this dark surface gets
@@ -50,6 +59,18 @@ export const ClientSidebar = ({ open }: ClientSidebarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const branding = useClientBranding();
+  const { hasReportValidationAddOn } = useAuth();
+
+  // Only shown once the paid add-on is enabled -- a link to a screen the user can't use
+  // otherwise would just read as broken/empty for non-subscribers.
+  const navigationItems = hasReportValidationAddOn
+    ? (() => {
+        const items = [...BASE_NAVIGATION_ITEMS];
+        const reportGeneratorIndex = items.findIndex((i) => i.id === 'report-generator');
+        items.splice(reportGeneratorIndex + 1, 0, REPORT_VALIDATION_NAV_ITEM);
+        return items;
+      })()
+    : BASE_NAVIGATION_ITEMS;
 
   const handleNavigation = (path: string) => {
     navigate(path);

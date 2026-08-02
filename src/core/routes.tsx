@@ -34,6 +34,8 @@ import { ClientReportsPage } from '../portals/client/ReportsPage';
 import { ReportsListPage } from '../portals/client/ReportsListPage';
 import { BlueprintPage } from '../portals/client/BlueprintPage';
 import { ReportGeneratorPage } from '../portals/client/ReportGeneratorPage';
+import { ReportValidationHistoryPage } from '../portals/client/ReportValidationHistoryPage';
+import { ReportValidationDetailPage } from '../portals/client/ReportValidationDetailPage';
 import { PropositionsPage } from '../portals/client/PropositionsPage';
 import { ProfilePage } from '../portals/client/ProfilePage';
 import { ROUTES } from './constants';
@@ -214,6 +216,14 @@ export const routes: RouteObject[] = [
       {
         path: 'report-generator',
         element: <ReportGeneratorPage />,
+      },
+      {
+        path: 'report-validation',
+        element: <ReportValidationHistoryPage />,
+      },
+      {
+        path: 'report-validation/:runId',
+        element: <ReportValidationDetailPage />,
       },
       {
         path: 'propositions',

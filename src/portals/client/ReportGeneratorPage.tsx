@@ -47,9 +47,13 @@ import {
   SmartToy as AiConsentIcon,
   PictureAsPdf as PdfIcon,
   FactCheck as VerifyMatchIcon,
+  VerifiedOutlined as ValidateReportIcon,
 } from "@mui/icons-material";
 import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
+import { ROUTES } from "../../core/constants";
+import { startReportValidation } from "../../api/reportValidationApi";
 import {
   ResponsiveContainer,
   LineChart,
@@ -170,6 +174,7 @@ function ConnectDataStep({ uploadedFile, onUpload }: { uploadedFile: File | null
       </Typography>
 
       <input ref={fileInputRef} type="file" accept=".xlsx,.csv" style={{ display: "none" }}
+        data-testid="report-file-input"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f); }} />
       <Box onClick={() => fileInputRef.current?.click()} sx={{
         border: "2px dashed", borderColor: uploadedFile ? "primary.main" : "divider",
@@ -1130,21 +1135,28 @@ function FilterBar({
         <FilterIcon fontSize="small" />
         <Typography variant="body2">Filter by (dimensions):</Typography>
       </Stack>
-      {slicers.map((slicer) => (
-        <FormControl key={slicer.column} size="small" sx={{ minWidth: 160 }} disabled={disabled}>
-          <InputLabel>{slicer.column}</InputLabel>
-          <Select
-            label={slicer.column}
-            value={activeFilters[slicer.column] ?? ""}
-            onChange={(e) => onFilterChange(slicer.column, e.target.value)}
-          >
-            <MenuItem value="">All</MenuItem>
-            {slicer.values.map((v) => (
-              <MenuItem key={v} value={v}>{v}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      ))}
+      {slicers.map((slicer) => {
+        // Passed as a variable (not an inline literal) so TS's excess-property check doesn't
+        // reject the data-testid hook Playwright uses to drive this control in rendering-health
+        // checks (DashboardAgents.ReportValidationApi).
+        const selectDisplayProps: Record<string, string> = { "data-testid": `filter-${slicer.column}` };
+        return (
+          <FormControl key={slicer.column} size="small" sx={{ minWidth: 160 }} disabled={disabled}>
+            <InputLabel>{slicer.column}</InputLabel>
+            <Select
+              label={slicer.column}
+              value={activeFilters[slicer.column] ?? ""}
+              onChange={(e) => onFilterChange(slicer.column, e.target.value)}
+              SelectDisplayProps={selectDisplayProps}
+            >
+              <MenuItem value="">All</MenuItem>
+              {slicer.values.map((v) => (
+                <MenuItem key={v} value={v}>{v}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        );
+      })}
       {hasActiveFilters && (
         <Button size="small" onClick={onClearFilters} disabled={disabled}>Clear filters</Button>
       )}
@@ -1154,12 +1166,17 @@ function FilterBar({
 
 function ReportResultsStep({
   report, theme, onFilterChange, onClearFilters, refreshing,
+  showValidateReport, validating, validateError, onValidateReport,
 }: {
   report: GeneratedReport;
   theme: VisualTheme;
   onFilterChange: (column: string, value: string) => void;
   onClearFilters: () => void;
   refreshing: boolean;
+  showValidateReport: boolean;
+  validating: boolean;
+  validateError: string | null;
+  onValidateReport: () => void;
 }) {
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
@@ -1236,12 +1253,30 @@ function ReportResultsStep({
           >
             {pdfExporting ? "Exporting…" : "Export PDF"}
           </Button>
+          {showValidateReport && (
+            <MuiTooltip title="Run an automated check confirming this report rendered correctly and its data looks trustworthy">
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<ValidateReportIcon />}
+                onClick={onValidateReport}
+                disabled={validating || refreshing}
+              >
+                {validating ? "Validating…" : "Validate Report"}
+              </Button>
+            </MuiTooltip>
+          )}
         </Stack>
       </Stack>
       {report.primaryTable && (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Computed from <strong>{report.primaryTable}</strong>.
         </Typography>
+      )}
+      {validateError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {validateError}
+        </Alert>
       )}
 
       <FilterBar
@@ -1260,6 +1295,7 @@ function ReportResultsStep({
       )}
 
       <Box
+        data-testid="report-results-loaded"
         sx={
           theme.mode === "dark"
             ? { bgcolor: theme.bg, borderRadius: 3, p: { xs: 2, md: 3 } }
@@ -1277,7 +1313,7 @@ function ReportResultsStep({
             </Typography>
             <Grid container spacing={2} sx={{ mb: 3 }}>
               {report.kpis.map((kpi) => (
-                <Grid key={kpi.label} size={{ xs: 12, sm: 6, md: 3 }}>
+                <Grid key={kpi.label} data-testid={`kpi-tile-${kpi.label}`} size={{ xs: 12, sm: 6, md: 3 }}>
                   <ReportKpiCard kpi={kpi} theme={theme} />
                 </Grid>
               ))}
@@ -1287,7 +1323,9 @@ function ReportResultsStep({
 
         <Stack spacing={2}>
           {report.charts.map((chart) => (
-            <ReportChartCard key={chart.title} chart={chart} theme={theme} />
+            <Box key={chart.title} data-testid={`chart-${chart.title}`}>
+              <ReportChartCard chart={chart} theme={theme} />
+            </Box>
           ))}
         </Stack>
       </Box>
@@ -1362,7 +1400,8 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
 }
 
 export function ReportGeneratorPage() {
-  const { user } = useAuth();
+  const { user, hasReportValidationAddOn } = useAuth();
+  const navigate = useNavigate();
   const clientId = user?.clientCode ?? "";
 
   const [mode, setMode] = useState<Mode>("strict");
@@ -1415,6 +1454,9 @@ export function ReportGeneratorPage() {
   const [reportGenerating, setReportGenerating] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  const [validating, setValidating] = useState(false);
+  const [validateError, setValidateError] = useState<string | null>(null);
 
   // AbortControllers for the two AI-backed calls, so a stalled request (past
   // AI_HARD_CEILING_SECONDS) can be cancelled from the UI instead of leaving the
@@ -1623,6 +1665,25 @@ export function ReportGeneratorPage() {
     }
   }
 
+  async function handleValidateReport() {
+    if (!uploadedFile || !report) return;
+    setValidating(true);
+    setValidateError(null);
+    try {
+      const { runId } = await startReportValidation(
+        uploadedFile,
+        report.templateId,
+        report.appliedFilters,
+        report
+      );
+      navigate(ROUTES.CLIENT.REPORT_VALIDATION_RUN.replace(":runId", runId));
+    } catch (err) {
+      setValidateError(err instanceof Error ? err.message : "Failed to start report validation.");
+    } finally {
+      setValidating(false);
+    }
+  }
+
   function handleFilterChange(column: string, value: string) {
     if (!report) return;
     const next = { ...report.appliedFilters };
@@ -1747,6 +1808,10 @@ export function ReportGeneratorPage() {
             onFilterChange={handleFilterChange}
             onClearFilters={handleClearFilters}
             refreshing={refreshing}
+            showValidateReport={hasReportValidationAddOn}
+            validating={validating}
+            validateError={validateError}
+            onValidateReport={handleValidateReport}
           />
         )}
 
