@@ -56,6 +56,8 @@ export const ROUTES = {
     BLUEPRINT: '/client/blueprint',
     REPORT_DESIGNER: '/client/report-designer',
     REPORT_GENERATOR: '/client/report-generator',
+    REPORT_VALIDATION: '/client/report-validation',
+    REPORT_VALIDATION_RUN: '/client/report-validation/:runId',
     PROPOSITIONS: '/client/propositions',
     PROFILE: '/client/profile',
   },

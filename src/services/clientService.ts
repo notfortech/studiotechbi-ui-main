@@ -16,6 +16,9 @@ export interface Client {
   /** Admin-declared entitlement — branding only actually renders for this client's users when
    * this is true AND a logo is set. */
   isPremiumSubscriber?: boolean;
+  /** Admin-declared entitlement for the paid Report Validation add-on — a separate subscription
+   * line item from isPremiumSubscriber. */
+  hasReportValidationAddOn?: boolean;
 }
 
 export interface ClientDetail extends Client {
@@ -37,6 +40,7 @@ interface ClientDto {
   templateVersion?: string | null;
   logoUrl?: string | null;
   isPremiumSubscriber?: boolean;
+  hasReportValidationAddOn?: boolean;
   isActive?: boolean;
   createdDate?: string;
   powerBIWorkspaceId?: string | null;
@@ -74,6 +78,7 @@ function mapClientDto(dto: ClientDto): Client {
     templateVersion: dto.templateVersion ?? undefined,
     logoUrl: dto.logoUrl ?? undefined,
     isPremiumSubscriber: dto.isPremiumSubscriber ?? false,
+    hasReportValidationAddOn: dto.hasReportValidationAddOn ?? false,
   };
 }
 
@@ -136,7 +141,14 @@ export async function createClient(body: CreateClientBody): Promise<Client> {
  * isPremiumSubscriber) would silently reset to their default. */
 export async function updateClient(
   clientId: string,
-  body: Partial<CreateClientBody & { status: string; isActive?: boolean; isPremiumSubscriber?: boolean }>
+  body: Partial<
+    CreateClientBody & {
+      status: string;
+      isActive?: boolean;
+      isPremiumSubscriber?: boolean;
+      hasReportValidationAddOn?: boolean;
+    }
+  >
 ): Promise<Client> {
   const current = await getClientById(clientId);
 
@@ -147,6 +159,10 @@ export async function updateClient(
   const clientCode = body.clientCode != null ? body.clientCode.trim() : current.clientCode;
   const isPremiumSubscriber =
     body.isPremiumSubscriber !== undefined ? body.isPremiumSubscriber : current.isPremiumSubscriber ?? false;
+  const hasReportValidationAddOn =
+    body.hasReportValidationAddOn !== undefined
+      ? body.hasReportValidationAddOn
+      : current.hasReportValidationAddOn ?? false;
 
   let isActive = current.isActive ?? true;
   if (body.status === 'disabled') isActive = false;
@@ -159,6 +175,7 @@ export async function updateClient(
     templateVersion,
     clientCode,
     isPremiumSubscriber,
+    hasReportValidationAddOn,
     isActive,
   };
 
@@ -175,6 +192,7 @@ export async function disableClient(clientId: string): Promise<void> {
     templateVersion: detail.templateVersion,
     clientCode: detail.clientCode,
     isPremiumSubscriber: detail.isPremiumSubscriber ?? false,
+    hasReportValidationAddOn: detail.hasReportValidationAddOn ?? false,
     isActive: false,
   });
 }

@@ -57,6 +57,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     isAuthenticated: !!user,
     hasAIInsights: TEMP_FORCE_AI_INSIGHTS_FOR_ALL || !!user?.hasAIInsights,
     hasBlueprints: TEMP_FORCE_BLUEPRINTS_FOR_ALL || !!user?.hasBlueprints,
+    hasReportValidationAddOn: !!user?.hasReportValidationAddOn,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -23,6 +23,9 @@ export interface User {
   hasAIInsights?: boolean;
   /** True when the user's plan includes Blueprint Generation. Controlled from the backend/Azure user mapping. */
   hasBlueprints?: boolean;
+  /** True when the client has the paid Report Validation add-on enabled (Client.
+   * HasReportValidationAddOn on the backend) -- a separate subscription line item from branding. */
+  hasReportValidationAddOn?: boolean;
 }
 
 export interface AuthContextType {
@@ -36,6 +39,8 @@ export interface AuthContextType {
   hasAIInsights: boolean;
   /** True when the user's Azure/plan mapping grants blueprint generation access. */
   hasBlueprints: boolean;
+  /** True when the client has the paid Report Validation add-on enabled. */
+  hasReportValidationAddOn: boolean;
 }
 
 export interface NavigationItem {
