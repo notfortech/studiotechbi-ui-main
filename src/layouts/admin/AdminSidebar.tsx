@@ -31,6 +31,7 @@ import {
   History as AuditLogIcon,
   MonitorHeart as SystemHealthIcon,
   Rule as SchemaAliasIcon,
+  SupportAgent as ReportRequestIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useState } from 'react';
@@ -47,6 +48,7 @@ const mainItems = [
   { id: 'clients', title: 'Clients', path: ROUTES.ADMIN.CLIENTS, icon: <BusinessIcon /> },
   { id: 'templates', title: 'Templates', path: ROUTES.ADMIN.TEMPLATES, icon: <DescriptionIcon /> },
   { id: 'powerbi', title: 'Power BI Assets', path: ROUTES.ADMIN.POWERBI_ASSETS, icon: <PowerBIIcon /> },
+  { id: 'report-requests', title: 'Report Requests', path: ROUTES.ADMIN.REPORT_REQUESTS, icon: <ReportRequestIcon /> },
   { id: 'pipeline', title: 'Pipeline Monitoring', path: ROUTES.ADMIN.PIPELINE_MONITORING, icon: <PipelineIcon /> },
   { id: 'file-uploads', title: 'File Upload Monitoring', path: ROUTES.ADMIN.FILE_UPLOAD_MONITORING, icon: <FileUploadIcon /> },
   { id: 'dataset-refresh', title: 'Dataset Refresh Logs', path: ROUTES.ADMIN.DATASET_REFRESH_LOGS, icon: <DatasetRefreshIcon /> },

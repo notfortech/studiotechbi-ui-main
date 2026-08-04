@@ -39,6 +39,8 @@ export const ROUTES = {
     LOGS_FUNCTIONAL: '/admin/logs/functional',
     LOGS_TECHNICAL: '/admin/logs/technical',
     LOGS_DASHBOARD_TEMPLATE: '/admin/logs/dashboard-template',
+    REPORT_REQUESTS: '/admin/report-requests',
+    REPORT_REQUEST_DETAIL: '/admin/report-requests/:requestId',
   },
 
   ACCOUNTANT: {
