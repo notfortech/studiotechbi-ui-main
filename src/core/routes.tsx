@@ -26,6 +26,7 @@ import { TechnicalLogsPage } from '../portals/admin/TechnicalLogsPage';
 import { DashboardTemplateLogsPage } from '../portals/admin/DashboardTemplateLogsPage';
 import { AdminReportRequestsPage } from '../portals/admin/AdminReportRequestsPage';
 import { AdminReportRequestDetailPage } from '../portals/admin/AdminReportRequestDetailPage';
+import { CreditPurchaseRequestsPage } from '../portals/admin/CreditPurchaseRequestsPage';
 import { SettingsPage } from '../portals/admin/SettingsPage';
 import { AdminReportsPage } from '../portals/admin/ReportsPage';
 import { AccountantDashboard } from '../portals/accountant/AccountantDashboard';
@@ -40,6 +41,7 @@ import { ReportValidationHistoryPage } from '../portals/client/ReportValidationH
 import { ReportValidationDetailPage } from '../portals/client/ReportValidationDetailPage';
 import { SavedReportsPage } from '../portals/client/SavedReportsPage';
 import { SavedReportDetailPage } from '../portals/client/SavedReportDetailPage';
+import { PurchaseCreditsPage } from '../portals/client/PurchaseCreditsPage';
 import { PropositionsPage } from '../portals/client/PropositionsPage';
 import { ProfilePage } from '../portals/client/ProfilePage';
 import { ROUTES } from './constants';
@@ -150,6 +152,10 @@ export const routes: RouteObject[] = [
         element: <AdminReportRequestDetailPage />,
       },
       {
+        path: 'credit-purchase-requests',
+        element: <CreditPurchaseRequestsPage />,
+      },
+      {
         path: 'reports',
         element: <AdminReportsPage />,
       },
@@ -244,6 +250,10 @@ export const routes: RouteObject[] = [
       {
         path: 'saved-reports/:savedReportId',
         element: <SavedReportDetailPage />,
+      },
+      {
+        path: 'purchase-credits',
+        element: <PurchaseCreditsPage />,
       },
       {
         path: 'propositions',

@@ -14,8 +14,10 @@ import {
   CircularProgress,
   List,
   ListItem,
+  ListItemButton,
   ListItemText,
 } from '@mui/material';
+import { ReportStatsDialog } from './ReportStatsDialog';
 import {
   Assessment,
   Description,
@@ -175,6 +177,11 @@ export function PortalDashboardPanel({
   const kpis = data?.kpis;
   const chartData = data?.chartData ?? [];
   const showVariance = chartData.some((p) => p.variance != null);
+  const [reportStatsOpen, setReportStatsOpen] = useState(false);
+
+  const handleQuickAction = (actionKey: string) => {
+    if (actionKey === 'view-report-stats') setReportStatsOpen(true);
+  };
 
   const stats =
     kpis != null
@@ -369,17 +376,26 @@ export function PortalDashboardPanel({
                 <Typography color="text.secondary">No quick actions</Typography>
               ) : (
                 <List dense disablePadding>
-                  {data.quickActions.map((label, i) => (
-                    <ListItem key={i} disableGutters>
-                      <ListItemText primary={label} />
-                    </ListItem>
-                  ))}
+                  {data.quickActions.map((action, i) =>
+                    action.actionKey ? (
+                      <ListItem key={i} disableGutters disablePadding>
+                        <ListItemButton onClick={() => handleQuickAction(action.actionKey!)}>
+                          <ListItemText primary={action.label} />
+                        </ListItemButton>
+                      </ListItem>
+                    ) : (
+                      <ListItem key={i} disableGutters>
+                        <ListItemText primary={action.label} />
+                      </ListItem>
+                    )
+                  )}
                 </List>
               )}
             </Paper>
           </Box>
         </Box>
       )}
+      <ReportStatsDialog open={reportStatsOpen} onClose={() => setReportStatsOpen(false)} />
     </Box>
   );
 }

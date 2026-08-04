@@ -108,11 +108,16 @@ export async function listReportTemplates(): Promise<ReportTemplateOption[]> {
   }
 }
 
+/** `mode` and `isRefinement` drive Report Stats' generation-event log (koru-main only writes a
+ * ReportGenerationEvent row when isRefinement is falsy) — pass `isRefinement: true` for a filter
+ * re-apply against an already-generated report so it isn't double-counted as a new report. */
 export async function generateReport(
   file: File,
   templateId?: string,
   filters?: Record<string, string>,
-  htmlTemplateId?: string
+  htmlTemplateId?: string,
+  mode?: 'strict' | 'ai',
+  isRefinement?: boolean
 ): Promise<GeneratedReport> {
   try {
     const form = new FormData();
@@ -120,6 +125,8 @@ export async function generateReport(
     if (templateId) form.append('templateId', templateId);
     if (filters && Object.keys(filters).length > 0) form.append('filters', JSON.stringify(filters));
     if (htmlTemplateId) form.append('htmlTemplateId', htmlTemplateId);
+    if (mode) form.append('mode', mode);
+    if (isRefinement) form.append('isRefinement', 'true');
     const res = await apiAxiosInstance.post<ApiResponse<GeneratedReport>>(
       '/report-generator/generate',
       form,

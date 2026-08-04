@@ -1567,7 +1567,7 @@ export function ReportGeneratorPage() {
     setReportError(null);
     setReportGenerating(true);
     try {
-      const result = await generateReport(uploadedFile, undefined, undefined, selectedHtmlTemplateId ?? undefined);
+      const result = await generateReport(uploadedFile, undefined, undefined, selectedHtmlTemplateId ?? undefined, mode);
       setReport(result);
       setFlowStep("report");
     } catch (err) {
@@ -1582,7 +1582,7 @@ export function ReportGeneratorPage() {
     setRefreshing(true);
     setReportError(null);
     try {
-      const result = await generateReport(uploadedFile, report.templateId, filters);
+      const result = await generateReport(uploadedFile, report.templateId, filters, undefined, mode, true);
       setReport(result);
     } catch (err) {
       setReportError(err instanceof Error ? err.message : "Failed to apply filter.");
