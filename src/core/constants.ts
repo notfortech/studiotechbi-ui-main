@@ -41,6 +41,7 @@ export const ROUTES = {
     LOGS_DASHBOARD_TEMPLATE: '/admin/logs/dashboard-template',
     REPORT_REQUESTS: '/admin/report-requests',
     REPORT_REQUEST_DETAIL: '/admin/report-requests/:requestId',
+    CREDIT_PURCHASE_REQUESTS: '/admin/credit-purchase-requests',
   },
 
   ACCOUNTANT: {
@@ -62,6 +63,7 @@ export const ROUTES = {
     REPORT_VALIDATION_RUN: '/client/report-validation/:runId',
     SAVED_REPORTS: '/client/saved-reports',
     SAVED_REPORT_DETAIL: '/client/saved-reports/:savedReportId',
+    PURCHASE_CREDITS: '/client/purchase-credits',
     PROPOSITIONS: '/client/propositions',
     PROFILE: '/client/profile',
   },

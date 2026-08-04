@@ -15,11 +15,19 @@ export interface PortalDashboardChartPoint {
   variance: number | null;
 }
 
+/** ActionKey is null/absent for the original, purely informational items (rendered exactly as
+ * before — plain text, no click affordance). Only a recognized key (currently just
+ * "view-report-stats") makes an item clickable. */
+export interface PortalQuickAction {
+  label: string;
+  actionKey?: string | null;
+}
+
 /** camelCase JSON from GET /api/dashboard */
 export interface PortalDashboardResponse {
   kpis: PortalDashboardKpis;
   chartData: PortalDashboardChartPoint[];
-  quickActions: string[];
+  quickActions: PortalQuickAction[];
   role: string;
 }
 
