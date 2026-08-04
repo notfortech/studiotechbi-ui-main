@@ -36,6 +36,8 @@ import { BlueprintPage } from '../portals/client/BlueprintPage';
 import { ReportGeneratorPage } from '../portals/client/ReportGeneratorPage';
 import { ReportValidationHistoryPage } from '../portals/client/ReportValidationHistoryPage';
 import { ReportValidationDetailPage } from '../portals/client/ReportValidationDetailPage';
+import { SavedReportsPage } from '../portals/client/SavedReportsPage';
+import { SavedReportDetailPage } from '../portals/client/SavedReportDetailPage';
 import { PropositionsPage } from '../portals/client/PropositionsPage';
 import { ProfilePage } from '../portals/client/ProfilePage';
 import { ROUTES } from './constants';
@@ -224,6 +226,14 @@ export const routes: RouteObject[] = [
       {
         path: 'report-validation/:runId',
         element: <ReportValidationDetailPage />,
+      },
+      {
+        path: 'saved-reports',
+        element: <SavedReportsPage />,
+      },
+      {
+        path: 'saved-reports/:savedReportId',
+        element: <SavedReportDetailPage />,
       },
       {
         path: 'propositions',

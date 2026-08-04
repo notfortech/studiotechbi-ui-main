@@ -58,6 +58,8 @@ export const ROUTES = {
     REPORT_GENERATOR: '/client/report-generator',
     REPORT_VALIDATION: '/client/report-validation',
     REPORT_VALIDATION_RUN: '/client/report-validation/:runId',
+    SAVED_REPORTS: '/client/saved-reports',
+    SAVED_REPORT_DETAIL: '/client/saved-reports/:savedReportId',
     PROPOSITIONS: '/client/propositions',
     PROFILE: '/client/profile',
   },
