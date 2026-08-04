@@ -45,15 +45,17 @@ import {
   ShowChart as LineFormatIcon,
   Timeline as AreaFormatIcon,
   SmartToy as AiConsentIcon,
-  PictureAsPdf as PdfIcon,
+  BookmarkAddOutlined as SaveReportIcon,
   FactCheck as VerifyMatchIcon,
   VerifiedOutlined as ValidateReportIcon,
+  SupportAgent as CustomReportIcon,
 } from "@mui/icons-material";
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { ROUTES } from "../../core/constants";
 import { startReportValidation } from "../../api/reportValidationApi";
+import { saveReport } from "../../api/savedReportsApi";
 import {
   ResponsiveContainer,
   LineChart,
@@ -82,24 +84,22 @@ import {
   recordAiConsent,
   matchSchemaModel,
   recordDataUsageConsent,
-  generateDashboardTemplate,
-  verifyTemplateMatch,
   type ExtractedSchemaDto,
   type GenerateReportModelResponse,
   type StarSchema,
   type TableInfo,
   type ReportMatchResult,
-  type GenerateDashboardTemplateResponse,
-  type VerifyTemplateMatchResponse,
   type AiProvider,
 } from "../../api/reportDesignerApi";
+import { requestCustomPowerBiReport } from "../../api/reportRequestsApi";
 import {
   generateReport,
   getReportAiSummary,
-  exportReportPdf,
+  verifyHtmlTemplateMatch,
   type GeneratedReport,
   type ReportChart,
   type ReportAiSummary,
+  type HtmlTemplateCandidate,
 } from "../../api/reportGeneratorApi";
 import { REPORT_THEMES, themeById, MiniReportPreview, type VisualTheme } from "./reportThemes";
 import { getCreditBalance, type CreditBalance } from "../../api/creditsApi";
@@ -438,118 +438,13 @@ function SchemaModelMatchPanel({
   );
 }
 
-// ── Dashboard Template Generator result (provenance log + visual log + deploy status) ──────────
-
-function ProvenanceList({ provenance }: { provenance: GenerateDashboardTemplateResponse["provenance"] }) {
-  if (provenance.length === 0) return null;
-  return (
-    <Stack spacing={0.5}>
-      {provenance.map((p) => (
-        <Stack key={`${p.table}.${p.column}`} direction="row" spacing={1.5} alignItems="center"
-          sx={{ py: 0.5, borderBottom: "1px solid", borderColor: "divider" }}>
-          <Chip
-            label={p.source === "uploaded" ? "Uploaded" : "Mocked"}
-            size="small"
-            color={p.source === "uploaded" ? "success" : "warning"}
-            sx={{ minWidth: 76 }}
-          />
-          <Typography variant="body2" fontWeight={600} sx={{ minWidth: 160 }}>
-            {p.table}[{p.column}]
-          </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ minWidth: 70 }}>{p.dataType}</Typography>
-          <Typography variant="caption" color="text.secondary">{p.rowCount} row{p.rowCount !== 1 ? "s" : ""}</Typography>
-        </Stack>
-      ))}
-    </Stack>
-  );
-}
-
-function DashboardTemplateResultPanel({ result }: { result: GenerateDashboardTemplateResponse }) {
-  const uploadedCount = result.provenance.filter((p) => p.source === "uploaded").length;
-  const mockedCount = result.provenance.filter((p) => p.source === "mocked").length;
-  const powerBiUrl = result.deployed && result.workspaceId && result.reportId
-    ? `https://app.powerbi.com/groups/${result.workspaceId}/reports/${result.reportId}`
-    : null;
-
-  return (
-    <Box>
-      <Alert severity={result.deployed ? "success" : "warning"} sx={{ mb: 2 }}>
-        {result.summary}
-      </Alert>
-
-      {result.designBlueprintLabel && (
-        <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-          <Chip size="small" color="primary" label={result.designBlueprintLabel} />
-          {result.designBlueprintTier && (
-            <Chip size="small" variant="outlined" label={result.designBlueprintTier} />
-          )}
-        </Stack>
-      )}
-
-      {powerBiUrl && (
-        <Button
-          variant="contained"
-          color="success"
-          href={powerBiUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          sx={{ mb: 2 }}
-        >
-          Open in Power BI
-        </Button>
-      )}
-
-      {result.deployed && (
-        <Paper variant="outlined" sx={{ p: 1.5, mb: 2, bgcolor: "background.default" }}>
-          <Stack direction="row" spacing={3} flexWrap="wrap" gap={1}>
-            <Typography variant="caption" sx={{ fontFamily: "monospace" }}>Workspace: {result.workspaceId}</Typography>
-            <Typography variant="caption" sx={{ fontFamily: "monospace" }}>Dataset: {result.datasetId}</Typography>
-            <Typography variant="caption" sx={{ fontFamily: "monospace" }}>Report: {result.reportId}</Typography>
-          </Stack>
-        </Paper>
-      )}
-
-      <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-        Data provenance — {uploadedCount} from your file, {mockedCount} mocked
-      </Typography>
-      <Paper variant="outlined" sx={{ p: 2, mb: 2, maxHeight: 260, overflowY: "auto" }}>
-        <ProvenanceList provenance={result.provenance} />
-      </Paper>
-
-      {result.visualGenerationLog.length > 0 && (
-        <>
-          <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>Generation log</Typography>
-          <Paper variant="outlined" sx={{ p: 2, mb: 2, maxHeight: 220, overflowY: "auto" }}>
-            <Stack spacing={0.75}>
-              {result.visualGenerationLog.map((line, i) => (
-                <Typography key={i} variant="caption" color="text.secondary">• {line}</Typography>
-              ))}
-            </Stack>
-          </Paper>
-        </>
-      )}
-
-      {result.blendedDatasetDownloadUrl && (
-        <Button
-          variant="outlined"
-          size="small"
-          href={result.blendedDatasetDownloadUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Download blended dataset
-        </Button>
-      )}
-    </Box>
-  );
-}
-
 function DataModelStep({
   extractedSchema, modelResult, generating, generateError, aiDeclined,
   matching, matchError, matchResult, dataConsentRecordedAt, dataConsentDeciding, dataConsentError, onOpenDataConsent,
   onCancelGeneration,
-  generatingTemplate, templateError, templateResult, onGenerateTemplate,
-  verifyingMatch, matchVerifyError, matchVerification, onVerifyMatch,
+  verifyingHtmlMatch, htmlMatchError, htmlMatchCandidates, selectedHtmlTemplateId,
+  onVerifyHtmlMatch, onSelectHtmlTemplate,
+  requestingCustomReport, customReportError, customReportFiled, onRequestCustomReport,
 }: {
   extractedSchema: ExtractedSchemaDto;
   modelResult: GenerateReportModelResponse | null;
@@ -564,14 +459,16 @@ function DataModelStep({
   dataConsentError: string | null;
   onOpenDataConsent: () => void;
   onCancelGeneration: () => void;
-  generatingTemplate: boolean;
-  templateError: string | null;
-  templateResult: GenerateDashboardTemplateResponse | null;
-  onGenerateTemplate: () => void;
-  verifyingMatch: boolean;
-  matchVerifyError: string | null;
-  matchVerification: VerifyTemplateMatchResponse | null;
-  onVerifyMatch: () => void;
+  verifyingHtmlMatch: boolean;
+  htmlMatchError: string | null;
+  htmlMatchCandidates: HtmlTemplateCandidate[] | null;
+  selectedHtmlTemplateId: string | null;
+  onVerifyHtmlMatch: () => void;
+  onSelectHtmlTemplate: (templateId: string) => void;
+  requestingCustomReport: boolean;
+  customReportError: string | null;
+  customReportFiled: boolean;
+  onRequestCustomReport: () => void;
 }) {
   const { elapsedSeconds, pct } = useTimedProgress(generating);
   const pastHardCeiling = elapsedSeconds > AI_HARD_CEILING_SECONDS;
@@ -636,63 +533,70 @@ function DataModelStep({
             Model generated in {modelResult.durationMs.toLocaleString()} ms.
           </Alert>
 
-          {modelResult.blueprint && (
+          {Boolean(modelResult.blueprint) && (
             <Box sx={{ mt: 2 }}>
-              {templateResult ? (
-                <DashboardTemplateResultPanel result={templateResult} />
-              ) : (
-                <Stack spacing={1}>
-                  {templateError && <Alert severity="error">{templateError}</Alert>}
-                  {matchVerifyError && <Alert severity="error">{matchVerifyError}</Alert>}
-                  {matchVerification && (
-                    <Alert severity={
-                      matchVerification.status === "Matched" ? "success"
-                        : matchVerification.status === "Error" ? "error"
-                        : "info"
-                    }>
-                      {matchVerification.message}
-                      {matchVerification.candidates.length > 0 && (
-                        <Stack direction="row" spacing={0.75} flexWrap="wrap" gap={0.75} sx={{ mt: 1 }}>
-                          {matchVerification.candidates.map((c) => (
-                            <Chip
-                              key={c.templateId}
-                              size="small"
-                              variant={c.templateId === matchVerification.matchedTemplateId ? "filled" : "outlined"}
-                              color={c.templateId === matchVerification.matchedTemplateId ? "success" : "default"}
-                              label={`${c.templateName} (${Math.round(c.confidence * 100)}%)`}
-                            />
-                          ))}
-                        </Stack>
-                      )}
-                    </Alert>
-                  )}
-                  <Stack direction="row" spacing={1.5}>
-                    <Button
-                      variant="outlined"
-                      startIcon={verifyingMatch ? <CircularProgress size={16} color="inherit" /> : <VerifyMatchIcon />}
-                      disabled={verifyingMatch}
-                      onClick={onVerifyMatch}
-                      sx={{ alignSelf: "flex-start" }}
-                    >
-                      {verifyingMatch ? "Checking for a template match…" : "Verify Template Match"}
-                    </Button>
-                    <Button
-                      variant="contained"
-                      startIcon={generatingTemplate ? <CircularProgress size={16} color="inherit" /> : <AiConsentIcon />}
-                      disabled={generatingTemplate || matchVerification?.status !== "Matched"}
-                      onClick={onGenerateTemplate}
-                      sx={{ alignSelf: "flex-start" }}
-                    >
-                      {generatingTemplate ? "Generating Dashboard Template…" : "Generate Dashboard Template"}
-                    </Button>
-                  </Stack>
-                  <Typography variant="caption" color="text.secondary">
-                    {matchVerification?.status === "Matched"
-                      ? "Blends your uploaded data with mock data for any missing fields, clones the matched template, and publishes it to your workspace. This can take a few minutes."
-                      : "Check whether a ready-made template already matches your data before generating — enables once a confident match is found."}
-                  </Typography>
+              <Stack spacing={1}>
+                {htmlMatchError && <Alert severity="error">{htmlMatchError}</Alert>}
+                {htmlMatchCandidates && (
+                  <Alert severity={htmlMatchCandidates.length > 0 ? "success" : "info"}>
+                    {htmlMatchCandidates.length > 0
+                      ? "We found a report template that fits your data:"
+                      : "No confident template match yet — a fallback report layout will be used. Our team has been notified so we can add coverage for your data shape."}
+                    {htmlMatchCandidates.length > 0 && (
+                      <Stack direction="row" spacing={0.75} flexWrap="wrap" gap={0.75} sx={{ mt: 1 }}>
+                        {htmlMatchCandidates.map((c) => (
+                          <Chip
+                            key={c.templateId}
+                            size="small"
+                            clickable
+                            variant={c.templateId === selectedHtmlTemplateId ? "filled" : "outlined"}
+                            color={c.templateId === selectedHtmlTemplateId ? "success" : "default"}
+                            label={`${c.templateName} (${Math.round(c.confidence * 100)}%)`}
+                            onClick={() => onSelectHtmlTemplate(c.templateId)}
+                          />
+                        ))}
+                      </Stack>
+                    )}
+                  </Alert>
+                )}
+                <Stack direction="row" spacing={1.5} flexWrap="wrap" gap={1.5}>
+                  <Button
+                    variant="outlined"
+                    startIcon={verifyingHtmlMatch ? <CircularProgress size={16} color="inherit" /> : <VerifyMatchIcon />}
+                    disabled={verifyingHtmlMatch}
+                    onClick={onVerifyHtmlMatch}
+                    sx={{ alignSelf: "flex-start" }}
+                  >
+                    {verifyingHtmlMatch ? "Checking for a template match…" : "Verify Template Match"}
+                  </Button>
+                  <Button
+                    variant="text"
+                    color="secondary"
+                    startIcon={requestingCustomReport ? <CircularProgress size={16} color="inherit" /> : <CustomReportIcon />}
+                    disabled={requestingCustomReport || customReportFiled}
+                    onClick={onRequestCustomReport}
+                    sx={{ alignSelf: "flex-start" }}
+                  >
+                    {customReportFiled
+                      ? "Custom report requested"
+                      : requestingCustomReport
+                      ? "Filing request…"
+                      : "Request a custom Power BI report"}
+                  </Button>
                 </Stack>
-              )}
+                {customReportError && <Alert severity="error">{customReportError}</Alert>}
+                {customReportFiled && (
+                  <Alert severity="success">
+                    Request filed — our analyst team will build a custom Power BI report for your
+                    data and it will appear in Saved Reports once ready.
+                  </Alert>
+                )}
+                <Typography variant="caption" color="text.secondary">
+                  Your report will render using our closest-matching interactive template, or a
+                  fallback layout if nothing matches yet. Not what you need? Request a custom
+                  Power BI report and our team will build one for you.
+                </Typography>
+              </Stack>
             </Box>
           )}
         </Box>
@@ -1165,7 +1069,7 @@ function FilterBar({
 }
 
 function ReportResultsStep({
-  report, theme, onFilterChange, onClearFilters, refreshing,
+  report, theme, onFilterChange, onClearFilters, refreshing, sourceFileName,
   showValidateReport, validating, validateError, onValidateReport,
 }: {
   report: GeneratedReport;
@@ -1173,6 +1077,7 @@ function ReportResultsStep({
   onFilterChange: (column: string, value: string) => void;
   onClearFilters: () => void;
   refreshing: boolean;
+  sourceFileName?: string;
   showValidateReport: boolean;
   validating: boolean;
   validateError: string | null;
@@ -1182,13 +1087,17 @@ function ReportResultsStep({
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSummary, setAiSummary] = useState<ReportAiSummary | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
-  const [pdfExporting, setPdfExporting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedReportId, setSavedReportId] = useState<string | null>(null);
 
   // A newly generated/refreshed report (new file, filter, or template) invalidates any cached
-  // AI summary — it was grounded on the previous result's numbers.
+  // AI summary and the "already saved" state — both were grounded on the previous result.
   useEffect(() => {
     setAiSummary(null);
     setAiError(null);
+    setSavedReportId(null);
+    setSaveError(null);
   }, [report]);
 
   const handleOpenAiSummary = async () => {
@@ -1206,26 +1115,16 @@ function ReportResultsStep({
     }
   };
 
-  const handleExportPdf = async () => {
-    setPdfExporting(true);
+  const handleSaveReport = async () => {
+    setSaving(true);
+    setSaveError(null);
     try {
-      const blob = await exportReportPdf(
-        report,
-        aiSummary?.enabled ? aiSummary.summary : undefined,
-        aiSummary?.enabled ? aiSummary.insights : undefined
-      );
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${(report.templateName ?? "report").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-report.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      const result = await saveReport(report, sourceFileName);
+      setSavedReportId(result.savedReportId);
     } catch (err) {
-      console.error("Failed to export report PDF.", err);
+      setSaveError(err instanceof Error ? err.message : "Failed to save report.");
     } finally {
-      setPdfExporting(false);
+      setSaving(false);
     }
   };
 
@@ -1247,11 +1146,11 @@ function ReportResultsStep({
           <Button
             size="small"
             variant="outlined"
-            startIcon={<PdfIcon />}
-            onClick={handleExportPdf}
-            disabled={pdfExporting || refreshing}
+            startIcon={<SaveReportIcon />}
+            onClick={handleSaveReport}
+            disabled={saving || refreshing || !report.htmlReport || !!savedReportId}
           >
-            {pdfExporting ? "Exporting…" : "Export PDF"}
+            {saving ? "Saving…" : savedReportId ? "Saved" : "Save Report"}
           </Button>
           {showValidateReport && (
             <MuiTooltip title="Run an automated check confirming this report rendered correctly and its data looks trustworthy">
@@ -1278,6 +1177,11 @@ function ReportResultsStep({
           {validateError}
         </Alert>
       )}
+      {saveError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {saveError}
+        </Alert>
+      )}
 
       <FilterBar
         slicers={report.slicers}
@@ -1302,32 +1206,52 @@ function ReportResultsStep({
             : undefined
         }
       >
-        {report.kpis.length > 0 && (
+        {report.htmlReport ? (
+          // Interactive HTML report template, primary format — sandboxed iframe with srcDoc
+          // (never dangerouslySetInnerHTML, which would execute the template's inline <script>
+          // in this document's own origin, with access to authToken/cookies). "allow-scripts"
+          // without "allow-same-origin" means the iframe's own JS can drive its own client-side
+          // filtering but can't read anything of this app's.
+          <iframe
+            title={report.templateName ?? "Report"}
+            srcDoc={report.htmlReport}
+            sandbox="allow-scripts"
+            style={{ width: "100%", height: "80vh", border: "none", borderRadius: 8 }}
+            data-testid="report-html-frame"
+          />
+        ) : (
+          // Fallback: no HTML template matched this dataset at all — the original KPI/chart grid,
+          // unchanged, so a report is never a hard failure just because nothing in the (still-
+          // growing) HTML template library covers this schema shape yet.
           <>
-            <Typography
-              variant="subtitle2"
-              fontWeight={700}
-              sx={{ mb: 1, color: theme.mode === "dark" ? alpha("#FFFFFF", 0.7) : "text.secondary" }}
-            >
-              Key Metrics
-            </Typography>
-            <Grid container spacing={2} sx={{ mb: 3 }}>
-              {report.kpis.map((kpi) => (
-                <Grid key={kpi.label} data-testid={`kpi-tile-${kpi.label}`} size={{ xs: 12, sm: 6, md: 3 }}>
-                  <ReportKpiCard kpi={kpi} theme={theme} />
+            {report.kpis.length > 0 && (
+              <>
+                <Typography
+                  variant="subtitle2"
+                  fontWeight={700}
+                  sx={{ mb: 1, color: theme.mode === "dark" ? alpha("#FFFFFF", 0.7) : "text.secondary" }}
+                >
+                  Key Metrics
+                </Typography>
+                <Grid container spacing={2} sx={{ mb: 3 }}>
+                  {report.kpis.map((kpi) => (
+                    <Grid key={kpi.label} data-testid={`kpi-tile-${kpi.label}`} size={{ xs: 12, sm: 6, md: 3 }}>
+                      <ReportKpiCard kpi={kpi} theme={theme} />
+                    </Grid>
+                  ))}
                 </Grid>
+              </>
+            )}
+
+            <Stack spacing={2}>
+              {report.charts.map((chart) => (
+                <Box key={chart.title} data-testid={`chart-${chart.title}`}>
+                  <ReportChartCard chart={chart} theme={theme} />
+                </Box>
               ))}
-            </Grid>
+            </Stack>
           </>
         )}
-
-        <Stack spacing={2}>
-          {report.charts.map((chart) => (
-            <Box key={chart.title} data-testid={`chart-${chart.title}`}>
-              <ReportChartCard chart={chart} theme={theme} />
-            </Box>
-          ))}
-        </Stack>
       </Box>
 
       <AiSummaryPanel
@@ -1434,19 +1358,19 @@ export function ReportGeneratorPage() {
   const [dataConsentError, setDataConsentError] = useState<string | null>(null);
   const [dataConsentRecordedAt, setDataConsentRecordedAt] = useState<string | null>(null);
 
-  // Dashboard Template Generator — blend + patch + generate visuals + PBIP import, chained
-  // server-side. Only reachable once modelResult.blueprint exists (AI-assisted mode).
-  const [templateGenerating, setTemplateGenerating] = useState(false);
-  const [templateError, setTemplateError] = useState<string | null>(null);
-  const [templateResult, setTemplateResult] = useState<GenerateDashboardTemplateResponse | null>(null);
-  const templateAbortRef = useRef<AbortController | null>(null);
+  // HTML template match — checks the interactive HTML report template library (>=85%
+  // confidence only) before generation, so the wizard can auto-select the right template.
+  const [verifyingHtmlMatch, setVerifyingHtmlMatch] = useState(false);
+  const [htmlMatchError, setHtmlMatchError] = useState<string | null>(null);
+  const [htmlMatchCandidates, setHtmlMatchCandidates] = useState<HtmlTemplateCandidate[] | null>(null);
+  const [selectedHtmlTemplateId, setSelectedHtmlTemplateId] = useState<string | null>(null);
+  const htmlMatchAbortRef = useRef<AbortController | null>(null);
 
-  // Cheap pre-check gating "Generate Dashboard Template" — only enabled once this comes back
-  // "Matched", so the client isn't left waiting on the slower generate call for nothing.
-  const [verifyingMatch, setVerifyingMatch] = useState(false);
-  const [matchVerifyError, setMatchVerifyError] = useState<string | null>(null);
-  const [matchVerification, setMatchVerification] = useState<VerifyTemplateMatchResponse | null>(null);
-  const matchVerifyAbortRef = useRef<AbortController | null>(null);
+  // "Request a custom Power BI report" — files a ticket for an analyst to build one by hand;
+  // the fulfilled report later appears in Saved Reports.
+  const [requestingCustomReport, setRequestingCustomReport] = useState(false);
+  const [customReportError, setCustomReportError] = useState<string | null>(null);
+  const [customReportFiled, setCustomReportFiled] = useState(false);
 
   const [selectedTheme, setSelectedTheme] = useState<number | null>(null);
 
@@ -1581,37 +1505,39 @@ export function ReportGeneratorPage() {
     matchAbortRef.current?.abort();
   }
 
-  async function handleGenerateTemplate() {
-    if (!modelResult?.blueprint || !uploadedFile) return;
-    setTemplateGenerating(true);
-    setTemplateError(null);
+  async function handleVerifyHtmlMatch() {
+    if (!uploadedFile) return;
+    setVerifyingHtmlMatch(true);
+    setHtmlMatchError(null);
     const controller = new AbortController();
-    templateAbortRef.current = controller;
+    htmlMatchAbortRef.current = controller;
     try {
-      const result = await generateDashboardTemplate(clientId, uploadedFile, modelResult.blueprint, controller.signal);
-      setTemplateResult(result);
+      const candidates = await verifyHtmlTemplateMatch(uploadedFile);
+      setHtmlMatchCandidates(candidates);
+      if (candidates.length === 1) setSelectedHtmlTemplateId(candidates[0].templateId);
     } catch (err) {
-      setTemplateError(err instanceof Error ? err.message : "Failed to generate dashboard template.");
+      setHtmlMatchError(err instanceof Error ? err.message : "Failed to verify template match.");
     } finally {
-      setTemplateGenerating(false);
-      templateAbortRef.current = null;
+      setVerifyingHtmlMatch(false);
+      htmlMatchAbortRef.current = null;
     }
   }
 
-  async function handleVerifyMatch() {
-    if (!modelResult?.blueprint || !uploadedFile) return;
-    setVerifyingMatch(true);
-    setMatchVerifyError(null);
-    const controller = new AbortController();
-    matchVerifyAbortRef.current = controller;
+  function handleSelectHtmlTemplate(templateId: string) {
+    setSelectedHtmlTemplateId((prev) => (prev === templateId ? null : templateId));
+  }
+
+  async function handleRequestCustomReport() {
+    if (!extractedSchema) return;
+    setRequestingCustomReport(true);
+    setCustomReportError(null);
     try {
-      const result = await verifyTemplateMatch(clientId, uploadedFile, modelResult.blueprint, controller.signal);
-      setMatchVerification(result);
+      await requestCustomPowerBiReport(extractedSchema);
+      setCustomReportFiled(true);
     } catch (err) {
-      setMatchVerifyError(err instanceof Error ? err.message : "Failed to verify template match.");
+      setCustomReportError(err instanceof Error ? err.message : "Failed to file the custom report request.");
     } finally {
-      setVerifyingMatch(false);
-      matchVerifyAbortRef.current = null;
+      setRequestingCustomReport(false);
     }
   }
 
@@ -1641,7 +1567,7 @@ export function ReportGeneratorPage() {
     setReportError(null);
     setReportGenerating(true);
     try {
-      const result = await generateReport(uploadedFile);
+      const result = await generateReport(uploadedFile, undefined, undefined, selectedHtmlTemplateId ?? undefined);
       setReport(result);
       setFlowStep("report");
     } catch (err) {
@@ -1717,19 +1643,21 @@ export function ReportGeneratorPage() {
     setMatchError(null);
     setDataConsentRecordedAt(null);
     setDataConsentError(null);
-    setTemplateResult(null);
-    setTemplateError(null);
-    matchVerifyAbortRef.current?.abort();
-    setMatchVerification(null);
-    setMatchVerifyError(null);
+    htmlMatchAbortRef.current?.abort();
+    setHtmlMatchCandidates(null);
+    setHtmlMatchError(null);
+    setSelectedHtmlTemplateId(null);
+    setRequestingCustomReport(false);
+    setCustomReportError(null);
+    setCustomReportFiled(false);
   }
 
   const theme = REPORT_THEMES[selectedTheme ?? 0];
   const canProceedConnect = !!uploadedFile && !extracting;
   // Disabled only while a match check is actually in flight — never permanently blocked by the
   // match outcome itself, so the deterministic report path stays reachable as a fallback
-  // regardless of whether a Power BI template match was ever confirmed.
-  const canProceedModel = !modelGenerating && !verifyingMatch;
+  // regardless of whether an HTML template match was ever confirmed.
+  const canProceedModel = !modelGenerating && !verifyingHtmlMatch;
   const canProceedTemplate = selectedTheme !== null && !reportGenerating;
   const badgeKind: TrustBadgeKind = flowStep === "report" ? "deterministic" : mode === "strict" ? "deterministic" : "ai";
 
@@ -1782,14 +1710,16 @@ export function ReportGeneratorPage() {
             dataConsentError={dataConsentError}
             onOpenDataConsent={handleOpenDataConsent}
             onCancelGeneration={handleCancelAiAnalysis}
-            generatingTemplate={templateGenerating}
-            templateError={templateError}
-            templateResult={templateResult}
-            onGenerateTemplate={handleGenerateTemplate}
-            verifyingMatch={verifyingMatch}
-            matchVerifyError={matchVerifyError}
-            matchVerification={matchVerification}
-            onVerifyMatch={handleVerifyMatch}
+            verifyingHtmlMatch={verifyingHtmlMatch}
+            htmlMatchError={htmlMatchError}
+            htmlMatchCandidates={htmlMatchCandidates}
+            selectedHtmlTemplateId={selectedHtmlTemplateId}
+            onVerifyHtmlMatch={handleVerifyHtmlMatch}
+            onSelectHtmlTemplate={handleSelectHtmlTemplate}
+            requestingCustomReport={requestingCustomReport}
+            customReportError={customReportError}
+            customReportFiled={customReportFiled}
+            onRequestCustomReport={handleRequestCustomReport}
           />
         )}
 
@@ -1811,6 +1741,7 @@ export function ReportGeneratorPage() {
             onFilterChange={handleFilterChange}
             onClearFilters={handleClearFilters}
             refreshing={refreshing}
+            sourceFileName={uploadedFile?.name}
             showValidateReport={hasReportValidationAddOn}
             validating={validating}
             validateError={validateError}

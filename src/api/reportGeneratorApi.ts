@@ -44,6 +44,13 @@ export interface ReportSlicer {
   values: string[];
 }
 
+export interface HtmlTemplateCandidate {
+  templateId: string;
+  templateName: string;
+  confidence: number;
+  industry?: string | null;
+}
+
 export interface GeneratedReport {
   templateId?: string;
   templateName?: string;
@@ -53,6 +60,17 @@ export interface GeneratedReport {
   slicers: ReportSlicer[];
   appliedFilters: Record<string, string>;
   warnings: string[];
+  /** Row-level records projected to the matched HTML template's declared data contract — already
+   * embedded inside htmlReport's own <script> block; exposed here too so the wizard can pass it
+   * straight through to Save Report without re-parsing the HTML string. */
+  rowData?: Record<string, unknown>[] | null;
+  htmlTemplateId?: string | null;
+  htmlTemplateName?: string | null;
+  htmlMatchConfidence?: number | null;
+  /** The fully-assembled, self-contained HTML report string (chrome + real data already
+   * injected) — render via <iframe srcDoc>, never dangerouslySetInnerHTML. Absent when no HTML
+   * template matched at all; the caller falls back to the KPI/chart grid below in that case. */
+  htmlReport?: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -93,13 +111,15 @@ export async function listReportTemplates(): Promise<ReportTemplateOption[]> {
 export async function generateReport(
   file: File,
   templateId?: string,
-  filters?: Record<string, string>
+  filters?: Record<string, string>,
+  htmlTemplateId?: string
 ): Promise<GeneratedReport> {
   try {
     const form = new FormData();
     form.append('file', file);
     if (templateId) form.append('templateId', templateId);
     if (filters && Object.keys(filters).length > 0) form.append('filters', JSON.stringify(filters));
+    if (htmlTemplateId) form.append('htmlTemplateId', htmlTemplateId);
     const res = await apiAxiosInstance.post<ApiResponse<GeneratedReport>>(
       '/report-generator/generate',
       form,
@@ -111,8 +131,26 @@ export async function generateReport(
   }
 }
 
-// ── AI summary + PDF export ──────────────────────────────────────────────────
-// Both operate on an already-generated report — no re-upload of the source file.
+/** AI-assisted "Verify Template Match" — full ranked HTML template candidate list, already
+ * filtered to >=85% confidence server-side (see koru-main's ReportGeneratorController.
+ * HtmlMatchConfidenceThreshold) so a low-confidence guess is never shown to the user. */
+export async function verifyHtmlTemplateMatch(file: File): Promise<HtmlTemplateCandidate[]> {
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await apiAxiosInstance.post<ApiResponse<{ correlationId: string; candidates: HtmlTemplateCandidate[] }>>(
+      '/report-generator/verify-html-match',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return extractData(res.data).candidates;
+  } catch (err) {
+    throw err instanceof Error ? err : apiError(err, 'Failed to verify template match.');
+  }
+}
+
+// ── AI summary ────────────────────────────────────────────────────────────────
+// Operates on an already-generated report — no re-upload of the source file.
 
 /** Re-exported for backward compatibility — the canonical type now lives alongside the shared
  * AiSummaryPanel component, since Blueprint Generator's "Ask AI Assistant" reuses both. */
@@ -135,19 +173,3 @@ export async function getReportAiSummary(report: GeneratedReport, question?: str
   }
 }
 
-export async function exportReportPdf(
-  report: GeneratedReport,
-  aiSummary?: string,
-  insights?: string[]
-): Promise<Blob> {
-  try {
-    const res = await apiAxiosInstance.post(
-      '/report-generator/export-pdf',
-      { report, aiSummary, insights },
-      { responseType: 'blob' }
-    );
-    return res.data as Blob;
-  } catch (err) {
-    throw err instanceof Error ? err : apiError(err, 'Failed to export report PDF.');
-  }
-}
