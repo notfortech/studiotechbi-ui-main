@@ -1726,7 +1726,10 @@ export function ReportGeneratorPage() {
 
   const theme = REPORT_THEMES[selectedTheme ?? 0];
   const canProceedConnect = !!uploadedFile && !extracting;
-  const canProceedModel = !modelGenerating;
+  // Disabled only while a match check is actually in flight — never permanently blocked by the
+  // match outcome itself, so the deterministic report path stays reachable as a fallback
+  // regardless of whether a Power BI template match was ever confirmed.
+  const canProceedModel = !modelGenerating && !verifyingMatch;
   const canProceedTemplate = selectedTheme !== null && !reportGenerating;
   const badgeKind: TrustBadgeKind = flowStep === "report" ? "deterministic" : mode === "strict" ? "deterministic" : "ai";
 
