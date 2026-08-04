@@ -19,6 +19,7 @@ import {
   AutoAwesome as BlueprintIcon,
   AutoGraph as ReportGeneratorIcon,
   VerifiedOutlined as ReportValidationIcon,
+  BookmarkBorder as SavedReportsIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { DRAWER_WIDTH, ROUTES } from '../../core/constants';
@@ -35,6 +36,7 @@ const BASE_NAVIGATION_ITEMS: NavigationItem[] = [
   { id: 'reports', title: 'Reports', path: ROUTES.CLIENT.REPORTS, icon: <AssessmentIcon /> },
   { id: 'blueprint', title: 'Generate Blueprint', path: ROUTES.CLIENT.BLUEPRINT, icon: <BlueprintIcon /> },
   { id: 'report-generator', title: 'Report Generator', path: ROUTES.CLIENT.REPORT_GENERATOR, icon: <ReportGeneratorIcon /> },
+  { id: 'saved-reports', title: 'Saved Reports', path: ROUTES.CLIENT.SAVED_REPORTS, icon: <SavedReportsIcon /> },
   { id: 'propositions', title: 'Propositions', path: ROUTES.CLIENT.PROPOSITIONS, icon: <DescriptionIcon /> },
   { id: 'profile', title: 'Profile', path: ROUTES.CLIENT.PROFILE, icon: <ProfileIcon /> },
 ];

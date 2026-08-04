@@ -50,6 +50,8 @@ export const DashboardTemplateLogsPage = () => {
         return { label: 'Needs Template', color: 'warning' };
       case 'DashboardTemplateMatchCheckFailed':
         return { label: 'Error', color: 'error' };
+      case 'HtmlTemplateBuildRequested':
+        return { label: 'Needs HTML Template', color: 'warning' };
       case 'DashboardTemplateGenerated':
       default:
         return { label: 'Success', color: 'success' };

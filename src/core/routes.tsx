@@ -24,6 +24,8 @@ import { SystemHealthPage } from '../portals/admin/SystemHealthPage';
 import { FunctionalLogsPage } from '../portals/admin/FunctionalLogsPage';
 import { TechnicalLogsPage } from '../portals/admin/TechnicalLogsPage';
 import { DashboardTemplateLogsPage } from '../portals/admin/DashboardTemplateLogsPage';
+import { AdminReportRequestsPage } from '../portals/admin/AdminReportRequestsPage';
+import { AdminReportRequestDetailPage } from '../portals/admin/AdminReportRequestDetailPage';
 import { SettingsPage } from '../portals/admin/SettingsPage';
 import { AdminReportsPage } from '../portals/admin/ReportsPage';
 import { AccountantDashboard } from '../portals/accountant/AccountantDashboard';
@@ -36,6 +38,8 @@ import { BlueprintPage } from '../portals/client/BlueprintPage';
 import { ReportGeneratorPage } from '../portals/client/ReportGeneratorPage';
 import { ReportValidationHistoryPage } from '../portals/client/ReportValidationHistoryPage';
 import { ReportValidationDetailPage } from '../portals/client/ReportValidationDetailPage';
+import { SavedReportsPage } from '../portals/client/SavedReportsPage';
+import { SavedReportDetailPage } from '../portals/client/SavedReportDetailPage';
 import { PropositionsPage } from '../portals/client/PropositionsPage';
 import { ProfilePage } from '../portals/client/ProfilePage';
 import { ROUTES } from './constants';
@@ -138,6 +142,14 @@ export const routes: RouteObject[] = [
         element: <DashboardTemplateLogsPage />,
       },
       {
+        path: 'report-requests',
+        element: <AdminReportRequestsPage />,
+      },
+      {
+        path: 'report-requests/:requestId',
+        element: <AdminReportRequestDetailPage />,
+      },
+      {
         path: 'reports',
         element: <AdminReportsPage />,
       },
@@ -224,6 +236,14 @@ export const routes: RouteObject[] = [
       {
         path: 'report-validation/:runId',
         element: <ReportValidationDetailPage />,
+      },
+      {
+        path: 'saved-reports',
+        element: <SavedReportsPage />,
+      },
+      {
+        path: 'saved-reports/:savedReportId',
+        element: <SavedReportDetailPage />,
       },
       {
         path: 'propositions',

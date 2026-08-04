@@ -39,6 +39,8 @@ export const ROUTES = {
     LOGS_FUNCTIONAL: '/admin/logs/functional',
     LOGS_TECHNICAL: '/admin/logs/technical',
     LOGS_DASHBOARD_TEMPLATE: '/admin/logs/dashboard-template',
+    REPORT_REQUESTS: '/admin/report-requests',
+    REPORT_REQUEST_DETAIL: '/admin/report-requests/:requestId',
   },
 
   ACCOUNTANT: {
@@ -58,6 +60,8 @@ export const ROUTES = {
     REPORT_GENERATOR: '/client/report-generator',
     REPORT_VALIDATION: '/client/report-validation',
     REPORT_VALIDATION_RUN: '/client/report-validation/:runId',
+    SAVED_REPORTS: '/client/saved-reports',
+    SAVED_REPORT_DETAIL: '/client/saved-reports/:savedReportId',
     PROPOSITIONS: '/client/propositions',
     PROFILE: '/client/profile',
   },
