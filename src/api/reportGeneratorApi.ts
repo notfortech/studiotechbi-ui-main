@@ -110,14 +110,22 @@ export async function listReportTemplates(): Promise<ReportTemplateOption[]> {
 
 /** `mode` and `isRefinement` drive Report Stats' generation-event log (koru-main only writes a
  * ReportGenerationEvent row when isRefinement is falsy) — pass `isRefinement: true` for a filter
- * re-apply against an already-generated report so it isn't double-counted as a new report. */
+ * re-apply against an already-generated report so it isn't double-counted as a new report.
+ * `themePrimary`/`themeDark`/`themeLight`/`themeBg` are the resolved hex colors from the wizard's
+ * existing theme picker (reportThemes.tsx) — when a matched HTML template's manifest declares a
+ * themeSlots mapping, koru-main overrides that template's own palette to match; omitted/absent
+ * fields leave the template's authored default colors untouched. */
 export async function generateReport(
   file: File,
   templateId?: string,
   filters?: Record<string, string>,
   htmlTemplateId?: string,
   mode?: 'strict' | 'ai',
-  isRefinement?: boolean
+  isRefinement?: boolean,
+  themePrimary?: string,
+  themeDark?: string,
+  themeLight?: string,
+  themeBg?: string
 ): Promise<GeneratedReport> {
   try {
     const form = new FormData();
@@ -127,6 +135,10 @@ export async function generateReport(
     if (htmlTemplateId) form.append('htmlTemplateId', htmlTemplateId);
     if (mode) form.append('mode', mode);
     if (isRefinement) form.append('isRefinement', 'true');
+    if (themePrimary) form.append('themePrimary', themePrimary);
+    if (themeDark) form.append('themeDark', themeDark);
+    if (themeLight) form.append('themeLight', themeLight);
+    if (themeBg) form.append('themeBg', themeBg);
     const res = await apiAxiosInstance.post<ApiResponse<GeneratedReport>>(
       '/report-generator/generate',
       form,
