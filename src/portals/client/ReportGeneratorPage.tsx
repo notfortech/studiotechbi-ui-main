@@ -1176,6 +1176,13 @@ function ReportResultsStep({
     return applyReportPalette(report.htmlReport, report.htmlTemplateId ?? null, REPORT_PALETTES[selectedPaletteIndex]);
   }, [report.htmlReport, report.htmlTemplateId, selectedPaletteIndex]);
 
+  // Mutating an <iframe>'s srcDoc in place on an already-mounted element isn't reliably picked up
+  // by the browser as a fresh navigation past the first load -- switching palettes a second time
+  // would silently keep showing the first-picked one. Forcing a real remount (a distinct `key`
+  // per report+palette combination) sidesteps that entirely: every palette change gets a brand
+  // new iframe element, guaranteeing a fresh load every time.
+  const iframeKey = `${report.htmlTemplateId ?? "none"}:${selectedPaletteIndex ?? "default"}:${report.htmlReport?.length ?? 0}`;
+
   const handleOpenAiSummary = async () => {
     setAiPanelOpen(true);
     if (aiSummary || aiLoading) return; // already fetched for this report — don't re-call
@@ -1436,6 +1443,7 @@ function ReportResultsStep({
                 "allow-scripts" without "allow-same-origin" means the iframe's own JS can drive
                 its own client-side filtering but can't read anything of this app's. */}
             <iframe
+              key={iframeKey}
               title={report.templateName ?? "Report"}
               srcDoc={displayedHtml ?? undefined}
               sandbox="allow-scripts"
