@@ -18,10 +18,11 @@ import { DRAWER_WIDTH } from '../../core/constants';
 
 interface AccountantTopBarProps {
   open: boolean;
+  isMobile: boolean;
   onToggleDrawer: () => void;
 }
 
-export const AccountantTopBar = ({ open, onToggleDrawer }: AccountantTopBarProps) => {
+export const AccountantTopBar = ({ open, isMobile, onToggleDrawer }: AccountantTopBarProps) => {
   const { user, logout } = useAuth();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
@@ -48,7 +49,7 @@ export const AccountantTopBar = ({ open, onToggleDrawer }: AccountantTopBarProps
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.leavingScreen,
           }),
-        ...(open && {
+        ...(!isMobile && open && {
           marginLeft: DRAWER_WIDTH,
           width: `calc(100% - ${DRAWER_WIDTH}px)`,
           transition: (theme) =>
@@ -73,7 +74,9 @@ export const AccountantTopBar = ({ open, onToggleDrawer }: AccountantTopBarProps
           Accountant Portal
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Typography variant="body2">{user?.name}</Typography>
+          <Typography variant="body2" noWrap sx={{ display: { xs: 'none', sm: 'block' } }}>
+            {user?.name}
+          </Typography>
           <IconButton
             size="large"
             aria-label="account of current user"

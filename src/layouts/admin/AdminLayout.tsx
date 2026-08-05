@@ -1,32 +1,30 @@
 import { Box, Toolbar } from '@mui/material';
-import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { AdminTopBar } from './AdminTopBar';
 import { AdminSidebar } from './AdminSidebar';
 import { DRAWER_WIDTH } from '../../core/constants';
+import { useResponsiveDrawer } from '../../hooks/useResponsiveDrawer';
 
 export const AdminLayout = () => {
-  const [open, setOpen] = useState(true);
-
-  const handleDrawerToggle = () => {
-    setOpen(!open);
-  };
+  const { isMobile, open, toggle, close } = useResponsiveDrawer();
 
   return (
     <Box sx={{ display: 'flex' }}>
-      <AdminTopBar open={open} onToggleDrawer={handleDrawerToggle} />
-      <AdminSidebar open={open} />
+      <AdminTopBar open={open} isMobile={isMobile} onToggleDrawer={toggle} />
+      <AdminSidebar open={open} isMobile={isMobile} onClose={close} />
       <Box
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
+          minWidth: 0,
+          width: '100%',
+          p: { xs: 2, sm: 3 },
           transition: (theme) =>
             theme.transitions.create('margin', {
               easing: theme.transitions.easing.sharp,
               duration: theme.transitions.duration.leavingScreen,
             }),
-          marginLeft: open ? 0 : `-${DRAWER_WIDTH}px`,
+          marginLeft: !isMobile && !open ? `-${DRAWER_WIDTH}px` : 0,
         }}
       >
         <Toolbar />

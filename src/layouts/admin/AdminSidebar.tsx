@@ -40,6 +40,8 @@ import { DRAWER_WIDTH, ROUTES } from '../../core/constants';
 
 interface AdminSidebarProps {
   open: boolean;
+  isMobile: boolean;
+  onClose: () => void;
 }
 
 const mainItems = [
@@ -66,7 +68,7 @@ const logsItems = [
   { id: 'dashboard-template', title: 'Dashboard Template Logs', path: ROUTES.ADMIN.LOGS_DASHBOARD_TEMPLATE, icon: <DashboardTemplateLogIcon /> },
 ];
 
-export const AdminSidebar = ({ open }: AdminSidebarProps) => {
+export const AdminSidebar = ({ open, isMobile, onClose }: AdminSidebarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const logsOpen = location.pathname.startsWith('/admin/logs');
@@ -74,14 +76,17 @@ export const AdminSidebar = ({ open }: AdminSidebarProps) => {
 
   const handleNavigation = (path: string) => {
     navigate(path);
+    if (isMobile) onClose();
   };
 
   const isSelected = (path: string) => location.pathname === path;
 
   return (
     <Drawer
-      variant="persistent"
+      variant={isMobile ? 'temporary' : 'persistent'}
       open={open}
+      onClose={onClose}
+      ModalProps={{ keepMounted: true }}
       sx={{
         width: DRAWER_WIDTH,
         flexShrink: 0,

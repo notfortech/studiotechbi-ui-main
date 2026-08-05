@@ -19,10 +19,11 @@ import { Logo } from '../../components/common/Logo';
 
 interface ClientTopBarProps {
   open: boolean;
+  isMobile: boolean;
   onToggleDrawer: () => void;
 }
 
-export const ClientTopBar = ({ open, onToggleDrawer }: ClientTopBarProps) => {
+export const ClientTopBar = ({ open, isMobile, onToggleDrawer }: ClientTopBarProps) => {
   const { user, logout } = useAuth();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
@@ -49,7 +50,7 @@ export const ClientTopBar = ({ open, onToggleDrawer }: ClientTopBarProps) => {
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.leavingScreen,
           }),
-        ...(open && {
+        ...(!isMobile && open && {
           marginLeft: DRAWER_WIDTH,
           width: `calc(100% - ${DRAWER_WIDTH}px)`,
         }),
@@ -65,18 +66,25 @@ export const ClientTopBar = ({ open, onToggleDrawer }: ClientTopBarProps) => {
         >
           <MenuIcon />
         </IconButton>
-        <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
           {/* Always StudioTechBI's own mark -- client branding (when premium) is shown
            * prominently in the sidebar instead, not by replacing this. */}
           <Logo size={30} textColor="#FFFFFF" />
           {user?.clientCode && (
-            <Typography component="span" variant="body2" sx={{ opacity: 0.85 }}>
+            <Typography
+              component="span"
+              variant="body2"
+              noWrap
+              sx={{ opacity: 0.85, display: { xs: 'none', sm: 'block' } }}
+            >
               — {user.clientName || user.clientCode}
             </Typography>
           )}
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Typography variant="body2">{user?.name}</Typography>
+          <Typography variant="body2" noWrap sx={{ display: { xs: 'none', sm: 'block' } }}>
+            {user?.name}
+          </Typography>
           <IconButton
             size="large"
             aria-label="account of current user"
