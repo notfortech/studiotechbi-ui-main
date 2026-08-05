@@ -1071,6 +1071,7 @@ function FilterBar({
 function ReportResultsStep({
   report, theme, onFilterChange, onClearFilters, refreshing, sourceFileName,
   showValidateReport, validating, validateError, onValidateReport,
+  requestingCustomReport, customReportError, customReportFiled, onRequestCustomReport,
 }: {
   report: GeneratedReport;
   theme: VisualTheme;
@@ -1082,6 +1083,10 @@ function ReportResultsStep({
   validating: boolean;
   validateError: string | null;
   onValidateReport: () => void;
+  requestingCustomReport: boolean;
+  customReportError: string | null;
+  customReportFiled: boolean;
+  onRequestCustomReport: () => void;
 }) {
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
@@ -1196,6 +1201,32 @@ function ReportResultsStep({
         <Alert severity="info" sx={{ mb: 2 }}>
           {report.warnings.join(" ")}
         </Alert>
+      )}
+
+      {!report.htmlTemplateId && (
+        <Stack spacing={1} sx={{ mb: 2 }}>
+          <Alert severity="info">
+            No confident interactive template match yet for this data shape — showing the standard
+            metrics view below instead. Our team has been notified so we can add coverage.
+          </Alert>
+          <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" gap={1}>
+            <Button
+              size="small"
+              variant="text"
+              color="secondary"
+              startIcon={requestingCustomReport ? <CircularProgress size={16} color="inherit" /> : <CustomReportIcon />}
+              disabled={requestingCustomReport || customReportFiled}
+              onClick={onRequestCustomReport}
+            >
+              {customReportFiled
+                ? "Custom report requested"
+                : requestingCustomReport
+                ? "Filing request…"
+                : "Request a custom Power BI report"}
+            </Button>
+          </Stack>
+          {customReportError && <Alert severity="error">{customReportError}</Alert>}
+        </Stack>
       )}
 
       <Box
@@ -1505,6 +1536,24 @@ export function ReportGeneratorPage() {
     matchAbortRef.current?.abort();
   }
 
+  // Files the same request "Request a custom Power BI report" would, without the client having to
+  // click it -- shared by every no-confident-match point in the wizard (AI-assisted verify-match
+  // below, and the deterministic generate call in handleGenerateReport) so an admin always ends up
+  // with a schema-carrying, admin-visible record. Guarded on customReportFiled by every caller so
+  // re-running a check doesn't double-file.
+  async function autoFileCustomReportRequest(schema: ExtractedSchemaDto, note?: string) {
+    if (customReportFiled) return;
+    setRequestingCustomReport(true);
+    try {
+      await requestCustomPowerBiReport(schema, note);
+      setCustomReportFiled(true);
+    } catch (err) {
+      setCustomReportError(err instanceof Error ? err.message : "Failed to file the custom report request.");
+    } finally {
+      setRequestingCustomReport(false);
+    }
+  }
+
   async function handleVerifyHtmlMatch() {
     if (!uploadedFile) return;
     setVerifyingHtmlMatch(true);
@@ -1515,22 +1564,11 @@ export function ReportGeneratorPage() {
       const candidates = await verifyHtmlTemplateMatch(uploadedFile);
       setHtmlMatchCandidates(candidates);
       if (candidates.length === 1) setSelectedHtmlTemplateId(candidates[0].templateId);
-      // No confident match -- file the same custom-report request the manual button below would,
-      // so an admin gets a schema-carrying record without the client having to click twice. Guard
-      // on customReportFiled so re-running the check (e.g. after re-uploading) doesn't double-file.
-      if (candidates.length === 0 && extractedSchema && !customReportFiled) {
-        setRequestingCustomReport(true);
-        try {
-          await requestCustomPowerBiReport(
-            extractedSchema,
-            "Auto-filed: no confident HTML template match found for this data shape."
-          );
-          setCustomReportFiled(true);
-        } catch (err) {
-          setCustomReportError(err instanceof Error ? err.message : "Failed to file the custom report request.");
-        } finally {
-          setRequestingCustomReport(false);
-        }
+      if (candidates.length === 0 && extractedSchema) {
+        await autoFileCustomReportRequest(
+          extractedSchema,
+          "Auto-filed: no confident HTML template match found for this data shape."
+        );
       }
     } catch (err) {
       setHtmlMatchError(err instanceof Error ? err.message : "Failed to verify template match.");
@@ -1546,16 +1584,8 @@ export function ReportGeneratorPage() {
 
   async function handleRequestCustomReport() {
     if (!extractedSchema) return;
-    setRequestingCustomReport(true);
     setCustomReportError(null);
-    try {
-      await requestCustomPowerBiReport(extractedSchema);
-      setCustomReportFiled(true);
-    } catch (err) {
-      setCustomReportError(err instanceof Error ? err.message : "Failed to file the custom report request.");
-    } finally {
-      setRequestingCustomReport(false);
-    }
+    await autoFileCustomReportRequest(extractedSchema);
   }
 
   function handleOpenDataConsent() {
@@ -1590,6 +1620,30 @@ export function ReportGeneratorPage() {
       );
       setReport(result);
       setFlowStep("report");
+
+      // Strict mode never runs the AI-assisted verify-match check, so this deterministic call is
+      // often the *only* point that ever learns whether an HTML template matched. Extract the
+      // schema (a pure structural parse, no AI -- consistent with strict mode's "no AI involved"
+      // promise) only when it's actually needed, i.e. we don't already have one and there's a gap
+      // to report, then file the same admin-visible request the AI-assisted path does.
+      if (!result.htmlTemplateId) {
+        let schema = extractedSchema;
+        if (!schema) {
+          try {
+            schema = await extractSchemaFromExcel(uploadedFile);
+            setExtractedSchema(schema);
+          } catch {
+            // Best-effort -- the client already has a working (fallback-layout) report; a failed
+            // schema extraction here must never surface as a report-generation failure.
+          }
+        }
+        if (schema) {
+          await autoFileCustomReportRequest(
+            schema,
+            "Auto-filed: no confident HTML template match found for this data shape (generated report)."
+          );
+        }
+      }
     } catch (err) {
       setReportError(err instanceof Error ? err.message : "Failed to generate report.");
     } finally {
@@ -1769,6 +1823,10 @@ export function ReportGeneratorPage() {
             validating={validating}
             validateError={validateError}
             onValidateReport={handleValidateReport}
+            requestingCustomReport={requestingCustomReport}
+            customReportError={customReportError}
+            customReportFiled={customReportFiled}
+            onRequestCustomReport={handleRequestCustomReport}
           />
         )}
 
