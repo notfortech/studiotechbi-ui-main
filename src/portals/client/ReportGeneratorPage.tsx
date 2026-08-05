@@ -1932,6 +1932,11 @@ export function ReportGeneratorPage() {
   // regardless of whether an HTML template match was ever confirmed.
   const canProceedModel = !modelGenerating && !verifyingHtmlMatch;
   // A confirmed HTML template match needs no theme pick -- only the no-match fallback report does.
+  // Strict mode's own Verify Template Match check lives on this same step (unlike AI mode, which
+  // verifies earlier, at the model step, before ever reaching here) -- so the theme/color-palette
+  // picker must stay hidden until that check has actually run. Showing it up front let a user pick
+  // a theme that's immediately thrown away the moment a template match is confirmed.
+  const strictAwaitingVerify = mode === "strict" && !selectedHtmlTemplateId && htmlMatchCandidates === null;
   const canProceedTemplate = (selectedTheme !== null || !!selectedHtmlTemplateId) && !reportGenerating;
   const reportGeneratingLabel = uploadProgressPct !== null
     ? `Uploading… ${uploadProgressPct}%`
@@ -2054,7 +2059,7 @@ export function ReportGeneratorPage() {
                 Using the matched template above — no theme needed. Click "Generate Report" below
                 to continue.
               </Alert>
-            ) : (
+            ) : strictAwaitingVerify ? null : (
               <TemplateStep
                 modelResult={modelResult}
                 selected={selectedTheme}
