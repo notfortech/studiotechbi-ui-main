@@ -1515,6 +1515,23 @@ export function ReportGeneratorPage() {
       const candidates = await verifyHtmlTemplateMatch(uploadedFile);
       setHtmlMatchCandidates(candidates);
       if (candidates.length === 1) setSelectedHtmlTemplateId(candidates[0].templateId);
+      // No confident match -- file the same custom-report request the manual button below would,
+      // so an admin gets a schema-carrying record without the client having to click twice. Guard
+      // on customReportFiled so re-running the check (e.g. after re-uploading) doesn't double-file.
+      if (candidates.length === 0 && extractedSchema && !customReportFiled) {
+        setRequestingCustomReport(true);
+        try {
+          await requestCustomPowerBiReport(
+            extractedSchema,
+            "Auto-filed: no confident HTML template match found for this data shape."
+          );
+          setCustomReportFiled(true);
+        } catch (err) {
+          setCustomReportError(err instanceof Error ? err.message : "Failed to file the custom report request.");
+        } finally {
+          setRequestingCustomReport(false);
+        }
+      }
     } catch (err) {
       setHtmlMatchError(err instanceof Error ? err.message : "Failed to verify template match.");
     } finally {
