@@ -14,13 +14,19 @@ import {
   Button,
   IconButton,
   Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
 } from '@mui/material';
-import { ArchiveOutlined as ArchiveIcon } from '@mui/icons-material';
+import { ArchiveOutlined as ArchiveIcon, EditOutlined as EditIcon } from '@mui/icons-material';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   listSavedReports,
   archiveSavedReport,
+  renameSavedReport,
   type SavedReportSummary,
 } from '../../api/savedReportsApi';
 import { ROUTES } from '../../core/constants';
@@ -36,6 +42,10 @@ export const SavedReportsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<SavedReportSummary | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
 
   const load = async () => {
     try {
@@ -63,6 +73,40 @@ export const SavedReportsPage = () => {
       setError(err instanceof Error ? err.message : 'Failed to remove saved report.');
     } finally {
       setArchivingId(null);
+    }
+  };
+
+  const handleOpenRename = (e: React.MouseEvent, report: SavedReportSummary) => {
+    e.stopPropagation();
+    setRenameError(null);
+    setRenameValue(report.title);
+    setRenameTarget(report);
+  };
+
+  const handleCloseRename = () => {
+    if (renaming) return;
+    setRenameTarget(null);
+  };
+
+  const handleConfirmRename = async () => {
+    if (!renameTarget) return;
+    const title = renameValue.trim();
+    if (!title) {
+      setRenameError('Title is required.');
+      return;
+    }
+    setRenaming(true);
+    setRenameError(null);
+    try {
+      await renameSavedReport(renameTarget.savedReportId, title);
+      setReports((prev) =>
+        prev.map((r) => (r.savedReportId === renameTarget.savedReportId ? { ...r, title } : r))
+      );
+      setRenameTarget(null);
+    } catch (err) {
+      setRenameError(err instanceof Error ? err.message : 'Failed to rename saved report.');
+    } finally {
+      setRenaming(false);
     }
   };
 
@@ -97,7 +141,7 @@ export const SavedReportsPage = () => {
                   <TableCell>Title</TableCell>
                   <TableCell sx={{ width: 180 }}>Type</TableCell>
                   <TableCell sx={{ width: 200 }}>Saved</TableCell>
-                  <TableCell sx={{ width: 64 }} />
+                  <TableCell sx={{ width: 104 }} />
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -131,6 +175,16 @@ export const SavedReportsPage = () => {
                       </TableCell>
                       <TableCell>{formatDate(r.createdAt)}</TableCell>
                       <TableCell>
+                        <Tooltip title="Rename">
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={(e) => handleOpenRename(e, r)}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
                         <Tooltip title="Remove">
                           <span>
                             <IconButton
@@ -151,6 +205,36 @@ export const SavedReportsPage = () => {
           </TableContainer>
         )}
       </Paper>
+
+      <Dialog open={!!renameTarget} onClose={handleCloseRename} maxWidth="xs" fullWidth>
+        <DialogTitle>Rename Report</DialogTitle>
+        <DialogContent>
+          {renameError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {renameError}
+            </Alert>
+          )}
+          <TextField
+            autoFocus
+            fullWidth
+            label="Title"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleConfirmRename();
+            }}
+            disabled={renaming}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseRename} disabled={renaming}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={() => void handleConfirmRename()} disabled={renaming}>
+            {renaming ? <CircularProgress size={20} /> : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

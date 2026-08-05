@@ -103,3 +103,11 @@ export async function archiveSavedReport(savedReportId: string): Promise<void> {
     throw err instanceof Error ? err : apiError(err, 'Failed to archive saved report.');
   }
 }
+
+export async function renameSavedReport(savedReportId: string, title: string): Promise<void> {
+  try {
+    await apiAxiosInstance.patch(`/saved-reports/${savedReportId}`, { title });
+  } catch (err) {
+    throw err instanceof Error ? err : apiError(err, 'Failed to rename saved report.');
+  }
+}

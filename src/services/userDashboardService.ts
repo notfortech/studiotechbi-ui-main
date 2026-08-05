@@ -5,6 +5,10 @@ export interface PortalDashboardKpis {
   activeReports: number;
   propositions: number;
   growthRate: number;
+  /** Client view only -- null for accountant view. */
+  reportsGenerated?: number | null;
+  /** Client view only -- null for accountant view. */
+  aiCreditsRemaining?: number | null;
 }
 
 export interface PortalDashboardChartPoint {
@@ -13,6 +17,11 @@ export interface PortalDashboardChartPoint {
   expenses: number;
   profit: number;
   variance: number | null;
+}
+
+export interface ReportGenerationChartPoint {
+  month: string;
+  count: number;
 }
 
 /** ActionKey is null/absent for the original, purely informational items (rendered exactly as
@@ -27,6 +36,8 @@ export interface PortalQuickAction {
 export interface PortalDashboardResponse {
   kpis: PortalDashboardKpis;
   chartData: PortalDashboardChartPoint[];
+  /** Client view only -- empty for accountant view. */
+  reportGenerationChartData: ReportGenerationChartPoint[];
   quickActions: PortalQuickAction[];
   role: string;
 }
