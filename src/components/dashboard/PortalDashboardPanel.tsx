@@ -17,7 +17,6 @@ import {
   ListItemButton,
   ListItemText,
 } from '@mui/material';
-import { ReportStatsDialog } from './ReportStatsDialog';
 import {
   Assessment,
   Description,
@@ -39,8 +38,10 @@ import {
   Legend,
 } from 'recharts';
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { PortalDashboardResponse } from '../../services/userDashboardService';
 import { ACCENT_BLUE, ACCENT_VIOLET, BRASS, NAVY } from '../../theme';
+import { ROUTES } from '../../core/constants';
 
 // Entrance choreography for the dashboard shell — cards rise into place in
 // sequence rather than popping in all at once, and KPI figures count up
@@ -93,6 +94,9 @@ function copyForDashboard(
   balanceLabel: string;
   growthLabel: string;
   chartTitle: string;
+  /** Same underlying `activeReports` KPI field, different meaning per role -- Power BI report
+   * count for accountant, SavedReports count for client (see ClientPortalDashboardService). */
+  activeReportsLabel: string;
 } {
   const isClient = role === 'client';
   if (isClient) {
@@ -101,7 +105,8 @@ function copyForDashboard(
       pageSubtitle: 'Your financial overview and account information',
       balanceLabel: 'Net position',
       growthLabel: 'Growth rate',
-      chartTitle: 'Reports generated',
+      chartTitle: 'Reports Generated',
+      activeReportsLabel: 'Saved Reports',
     };
   }
   return {
@@ -110,6 +115,7 @@ function copyForDashboard(
     balanceLabel: hasSelectedClient ? 'Client net position' : 'Firm net position',
     growthLabel: 'Growth rate',
     chartTitle: hasSelectedClient ? 'Client performance' : 'Firm performance',
+    activeReportsLabel: 'Active reports',
   };
 }
 
@@ -183,10 +189,11 @@ export function PortalDashboardPanel({
   const reportGenerationChartData = data?.reportGenerationChartData ?? [];
   const showVariance = chartData.some((p) => p.variance != null);
   const isClient = role === 'client';
-  const [reportStatsOpen, setReportStatsOpen] = useState(false);
+  const navigate = useNavigate();
 
   const handleQuickAction = (actionKey: string) => {
-    if (actionKey === 'view-report-stats') setReportStatsOpen(true);
+    if (actionKey === 'view-saved-reports') navigate(ROUTES.CLIENT.SAVED_REPORTS);
+    else if (actionKey === 'buy-ai-credits') navigate(ROUTES.CLIENT.PURCHASE_CREDITS);
   };
 
   const stats =
@@ -200,7 +207,7 @@ export function PortalDashboardPanel({
             color: ACCENT_BLUE,
           },
           {
-            title: 'Active reports',
+            title: copy.activeReportsLabel,
             rawValue: kpis.activeReports,
             formatter: (n: number) => String(Math.round(n)),
             icon: <Assessment />,
@@ -225,7 +232,7 @@ export function PortalDashboardPanel({
           ...(kpis.reportsGenerated != null
             ? [
                 {
-                  title: 'Reports generated',
+                  title: 'Reports Generated',
                   rawValue: kpis.reportsGenerated,
                   formatter: (n: number) => String(Math.round(n)),
                   icon: <AutoGraph />,
@@ -452,7 +459,6 @@ export function PortalDashboardPanel({
           </Box>
         </Box>
       )}
-      <ReportStatsDialog open={reportStatsOpen} onClose={() => setReportStatsOpen(false)} />
     </Box>
   );
 }
