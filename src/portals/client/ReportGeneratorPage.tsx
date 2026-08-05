@@ -112,6 +112,7 @@ import { Eyebrow } from "../../components/common/Eyebrow";
 import { Accent } from "../../components/common/Accent";
 import { MetricTile } from "../../components/common/MetricTile";
 import { AiSummaryPanel } from "../../components/common/AiSummaryPanel";
+import { LowCreditsAlert, LOW_CREDIT_BALANCE_THRESHOLD } from "../../components/common/LowCreditsAlert";
 
 // ── Theme color cycling for multi-series/category charts ────────────────────
 
@@ -630,7 +631,7 @@ const PREMIUM_TEMPLATE_PLANS = new Set(["Professional", "Enterprise"]);
 function CreditBalanceBadge({ balance }: { balance: CreditBalance | null }) {
   if (!balance || (balance.creditsRemaining === null && !balance.isUnlimited)) return null;
 
-  const low = !balance.isUnlimited && (balance.creditsRemaining ?? 0) <= 2;
+  const low = !balance.isUnlimited && (balance.creditsRemaining ?? 0) < LOW_CREDIT_BALANCE_THRESHOLD;
   const label = balance.isUnlimited
     ? "Unlimited AI credits"
     : `${balance.creditsRemaining} AI credit${balance.creditsRemaining === 1 ? "" : "s"} left`;
@@ -1854,6 +1855,8 @@ export function ReportGeneratorPage() {
             <Step key={s.key}><StepLabel>{s.label}</StepLabel></Step>
           ))}
         </Stepper>
+
+        {mode === "ai" && <LowCreditsAlert balance={creditBalance} />}
 
         {flowStep === "connect" && (
           <>

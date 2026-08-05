@@ -102,6 +102,7 @@ export const CreditPurchaseRequestsPage = () => {
                 <TableRow>
                   <TableCell sx={{ width: 130 }}>Status</TableCell>
                   <TableCell>Pack</TableCell>
+                  <TableCell sx={{ width: 100 }}>Source</TableCell>
                   <TableCell sx={{ width: 200 }}>Requested</TableCell>
                   <TableCell sx={{ width: 200 }}>Paid</TableCell>
                   <TableCell sx={{ width: 140 }} />
@@ -110,7 +111,7 @@ export const CreditPurchaseRequestsPage = () => {
               <TableBody>
                 {requests.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 6 }} color="text.secondary">
+                    <TableCell colSpan={6} align="center" sx={{ py: 6 }} color="text.secondary">
                       No credit purchase requests yet.
                     </TableCell>
                   </TableRow>
@@ -123,6 +124,13 @@ export const CreditPurchaseRequestsPage = () => {
                           <Chip label={status.label} size="small" color={status.color === 'default' ? undefined : status.color} />
                         </TableCell>
                         <TableCell>{r.packLabel} ({r.creditsRequested.toLocaleString()} credits)</TableCell>
+                        <TableCell>
+                          {r.source === 'System' ? (
+                            <Chip label="Auto (low balance)" size="small" color="info" variant="outlined" />
+                          ) : (
+                            'Client'
+                          )}
+                        </TableCell>
                         <TableCell>{formatDate(r.createdAt)}</TableCell>
                         <TableCell>{formatDate(r.paidAtUtc)}</TableCell>
                         <TableCell>

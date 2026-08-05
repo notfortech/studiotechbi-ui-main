@@ -17,7 +17,7 @@ import {
   DataObject as JsonIcon,
   AutoAwesome as AiAssistantIcon,
 } from "@mui/icons-material";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   downloadBlueprintPdf,
   downloadBlueprintJson,
@@ -25,6 +25,8 @@ import {
   type BlueprintDto,
 } from "../../api/blueprintApi";
 import { AiSummaryPanel, type AiSummary } from "../../components/common/AiSummaryPanel";
+import { LowCreditsAlert } from "../../components/common/LowCreditsAlert";
+import { getCreditBalance, type CreditBalance } from "../../api/creditsApi";
 
 interface Props {
   blueprints: BlueprintDto[];
@@ -47,6 +49,17 @@ export function BlueprintHistoryTable({ blueprints }: Props) {
   const [aiError, setAiError] = useState<string | null>(null);
   const [activeAiBlueprintId, setActiveAiBlueprintId] = useState<string | null>(null);
 
+  // "Ask AI Assistant" below consumes AI credits same as Report Generator's -- surfaced here too
+  // so a low balance is visible before the client hits a 402, not just after.
+  const [creditBalance, setCreditBalance] = useState<CreditBalance | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getCreditBalance()
+      .then((b) => { if (!cancelled) setCreditBalance(b); })
+      .catch(() => { /* fail silent -- a balance widget shouldn't block the page */ });
+    return () => { cancelled = true; };
+  }, []);
+
   const handleAskAi = async (blueprint: BlueprintDto) => {
     setActiveAiBlueprintId(blueprint.id);
     setAiPanelOpen(true);
@@ -56,6 +69,7 @@ export function BlueprintHistoryTable({ blueprints }: Props) {
     try {
       const result = await getBlueprintAiSummary(blueprint.id);
       setAiSummaries((prev) => ({ ...prev, [blueprint.id]: result }));
+      void getCreditBalance().then(setCreditBalance).catch(() => {});
     } catch (err) {
       setAiError(err instanceof Error ? err.message : "Failed to generate AI summary.");
     } finally {
@@ -97,6 +111,7 @@ export function BlueprintHistoryTable({ blueprints }: Props) {
       <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
         Previous Blueprints
       </Typography>
+      <LowCreditsAlert balance={creditBalance} />
       <TableContainer component={Paper} variant="outlined">
         <Table size="small">
           <TableHead>
