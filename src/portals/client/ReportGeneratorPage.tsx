@@ -1827,7 +1827,8 @@ export function ReportGeneratorPage() {
   // match outcome itself, so the deterministic report path stays reachable as a fallback
   // regardless of whether an HTML template match was ever confirmed.
   const canProceedModel = !modelGenerating && !verifyingHtmlMatch;
-  const canProceedTemplate = selectedTheme !== null && !reportGenerating;
+  // A confirmed HTML template match needs no theme pick -- only the no-match fallback report does.
+  const canProceedTemplate = (selectedTheme !== null || !!selectedHtmlTemplateId) && !reportGenerating;
   const badgeKind: TrustBadgeKind = flowStep === "report" ? "deterministic" : mode === "strict" ? "deterministic" : "ai";
 
   return (
@@ -1896,12 +1897,59 @@ export function ReportGeneratorPage() {
 
         {flowStep === "template" && (
           <>
-            <TemplateStep
-              modelResult={modelResult}
-              selected={selectedTheme}
-              onSelect={setSelectedTheme}
-              planTier={creditBalance?.subscriptionPlan ?? null}
-            />
+            {mode === "strict" && (
+              <Stack spacing={1.5} sx={{ mb: 3 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Check if we already have an interactive template that fits your data — if so, you
+                  can skip picking a theme below and generate straight away.
+                </Typography>
+                {htmlMatchError && <Alert severity="error">{htmlMatchError}</Alert>}
+                {htmlMatchCandidates && (
+                  <Alert severity={htmlMatchCandidates.length > 0 ? "success" : "info"}>
+                    {htmlMatchCandidates.length > 0
+                      ? "We found a report template that fits your data:"
+                      : "No confident template match yet — pick a theme below for the standard report layout."}
+                    {htmlMatchCandidates.length > 0 && (
+                      <Stack direction="row" spacing={0.75} flexWrap="wrap" gap={0.75} sx={{ mt: 1 }}>
+                        {htmlMatchCandidates.map((c) => (
+                          <Chip
+                            key={c.templateId}
+                            size="small"
+                            clickable
+                            variant={c.templateId === selectedHtmlTemplateId ? "filled" : "outlined"}
+                            color={c.templateId === selectedHtmlTemplateId ? "success" : "default"}
+                            label={`${c.templateName} (${Math.round(c.confidence * 100)}%)`}
+                            onClick={() => handleSelectHtmlTemplate(c.templateId)}
+                          />
+                        ))}
+                      </Stack>
+                    )}
+                  </Alert>
+                )}
+                <Button
+                  variant="outlined"
+                  startIcon={verifyingHtmlMatch ? <CircularProgress size={16} color="inherit" /> : <VerifyMatchIcon />}
+                  disabled={verifyingHtmlMatch || !uploadedFile}
+                  onClick={handleVerifyHtmlMatch}
+                  sx={{ alignSelf: "flex-start" }}
+                >
+                  {verifyingHtmlMatch ? "Checking for a template match…" : "Verify Template Match"}
+                </Button>
+              </Stack>
+            )}
+            {selectedHtmlTemplateId ? (
+              <Alert severity="success">
+                Using the matched template above — no theme needed. Click "Generate Report" below
+                to continue.
+              </Alert>
+            ) : (
+              <TemplateStep
+                modelResult={modelResult}
+                selected={selectedTheme}
+                onSelect={setSelectedTheme}
+                planTier={creditBalance?.subscriptionPlan ?? null}
+              />
+            )}
             {reportError && <Alert severity="error" sx={{ mt: 2 }}>{reportError}</Alert>}
           </>
         )}
@@ -1941,8 +1989,25 @@ export function ReportGeneratorPage() {
             </Button>
           )}
           {flowStep === "model" && (
-            <Button variant="contained" disabled={!canProceedModel} onClick={() => setFlowStep("template")}>
-              {modelGenerating ? "Generating model…" : "Next"}
+            <Button
+              variant="contained"
+              disabled={!canProceedModel || reportGenerating}
+              startIcon={reportGenerating ? <CircularProgress size={16} color="inherit" /> : undefined}
+              onClick={() => {
+                // A confirmed HTML template match means there's nothing left to pick -- skip the
+                // theme-picker step (it's now only for the no-match fallback path) and generate
+                // straight away.
+                if (selectedHtmlTemplateId) void handleGenerateReport();
+                else setFlowStep("template");
+              }}
+            >
+              {modelGenerating
+                ? "Generating model…"
+                : reportGenerating
+                ? "Generating report…"
+                : selectedHtmlTemplateId
+                ? "Generate Report"
+                : "Next"}
             </Button>
           )}
           {flowStep === "template" && (
