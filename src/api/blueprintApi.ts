@@ -166,10 +166,17 @@ export async function deleteBlueprint(blueprintId: string): Promise<void> {
  * already-generated JSON. Same InsightsEngine proxy pattern as Report Generator's AI summary.
  * `question`, when supplied, asks that specific follow-up instead of the general explanation. */
 export async function getBlueprintAiSummary(blueprintId: string, question?: string): Promise<AiSummary> {
-  const res = await apiAxiosInstance.post<AiSummary>(
-    `/blueprints/${blueprintId}/ai-summary`,
-    undefined,
-    question ? { params: { question } } : undefined
-  );
-  return res.data;
+  try {
+    const res = await apiAxiosInstance.post<AiSummary>(
+      `/blueprints/${blueprintId}/ai-summary`,
+      undefined,
+      question ? { params: { question } } : undefined
+    );
+    return res.data;
+  } catch (err) {
+    // Not wrapped in ApiResponse<T> -- mirrors the endpoint's own { enabled, message } shape
+    // (e.g. a 402 "insufficient AI credits" body), same unwrap as reportGeneratorApi's apiError.
+    const axiosErr = err as AxiosError<{ message?: string }>;
+    throw new Error(axiosErr.response?.data?.message || 'Failed to generate AI summary.');
+  }
 }

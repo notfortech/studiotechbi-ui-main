@@ -5,6 +5,7 @@ import { AxiosError } from 'axios';
 // Mirrors koru-main's CreditPurchaseRequestDtos.cs / AdminCreditPurchaseRequestsController.
 
 export type CreditPurchaseRequestStatus = 'Pending' | 'Paid' | 'Cancelled';
+export type CreditPurchaseRequestSource = 'Client' | 'System';
 
 export interface CreditPurchaseRequestSummary {
   requestId: string;
@@ -13,6 +14,7 @@ export interface CreditPurchaseRequestSummary {
   packLabel: string;
   createdAt: string;
   paidAtUtc?: string | null;
+  source: CreditPurchaseRequestSource;
 }
 
 export interface CreditPurchaseRequestDetail {
@@ -26,6 +28,7 @@ export interface CreditPurchaseRequestDetail {
   createdAt: string;
   paidAtUtc?: string | null;
   paidByEmail?: string | null;
+  source: CreditPurchaseRequestSource;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
