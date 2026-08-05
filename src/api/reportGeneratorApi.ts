@@ -108,6 +108,126 @@ export async function listReportTemplates(): Promise<ReportTemplateOption[]> {
   }
 }
 
+export interface ReportUploadLimits {
+  /** Below this, use the fast synchronous generateReport() call unchanged. At/above it, route
+   * through initReportUpload/completeReportUpload instead (the direct-to-blob async path). */
+  maxUploadBytes: number;
+  /** The real hard ceiling for the async path — always >= maxUploadBytes. Reject client-side
+   * above this; the server re-verifies the real committed blob size regardless. */
+  maxAsyncUploadBytes: number;
+}
+
+/** The server-configured upload size thresholds (see koru-main's UploadLimitsOptions) — fetched
+ * rather than hardcoded so the client-side check can never silently drift from what the backend
+ * actually enforces. Callers should treat a failed fetch as "no client-side check possible this
+ * time" and let the upload proceed to the server's own enforcement, rather than blocking the user. */
+export async function getUploadLimits(): Promise<ReportUploadLimits> {
+  try {
+    const res = await apiAxiosInstance.get<ApiResponse<ReportUploadLimits>>(
+      '/report-generator/upload-limits'
+    );
+    return extractData(res.data);
+  } catch (err) {
+    throw err instanceof Error ? err : apiError(err, 'Failed to load upload limits.');
+  }
+}
+
+// ── Large-file upload: direct-to-blob + durable async processing ───────────────────────────────
+// Used only for files at/above the configured threshold — see reportUploadService.ts for the
+// direct-to-blob PUT itself. Small files keep using generateReport() above, unchanged.
+
+export interface ReportUploadInit {
+  jobId: string;
+  writeUrl: string;
+  blobPath: string;
+  expiresAtUtc: string;
+}
+
+export interface ReportGenerationJobStatus {
+  jobId: string;
+  status: 'Pending' | 'Processing' | 'Completed' | 'Failed';
+  result: GeneratedReport | null;
+  errorMessage: string | null;
+}
+
+/** Mints a write-only SAS URL + a Pending job row for a large file, before any bytes move. */
+export async function initReportUpload(fileName: string): Promise<ReportUploadInit> {
+  try {
+    const res = await apiAxiosInstance.post<ApiResponse<ReportUploadInit>>(
+      '/report-generator/uploads/init',
+      { fileName }
+    );
+    return extractData(res.data);
+  } catch (err) {
+    throw err instanceof Error ? err : apiError(err, 'Failed to prepare the upload.');
+  }
+}
+
+/** Called once the direct-to-blob PUT finishes — the same optional fields generateReport() takes,
+ * carried as JSON since no file rides along on this call. Enqueues the async job on success. */
+export async function completeReportUpload(
+  jobId: string,
+  templateId?: string,
+  filters?: Record<string, string>,
+  htmlTemplateId?: string,
+  mode?: 'strict' | 'ai',
+  isRefinement?: boolean,
+  themePrimary?: string,
+  themeDark?: string,
+  themeLight?: string,
+  themeBg?: string
+): Promise<{ jobId: string; status: string }> {
+  try {
+    const res = await apiAxiosInstance.post<ApiResponse<{ jobId: string; status: string }>>(
+      `/report-generator/uploads/${jobId}/complete`,
+      {
+        templateId: templateId ?? null,
+        filters: filters && Object.keys(filters).length > 0 ? JSON.stringify(filters) : null,
+        htmlTemplateId: htmlTemplateId ?? null,
+        mode: mode ?? null,
+        isRefinement: !!isRefinement,
+        themePrimary: themePrimary ?? null,
+        themeDark: themeDark ?? null,
+        themeLight: themeLight ?? null,
+        themeBg: themeBg ?? null,
+      }
+    );
+    return extractData(res.data);
+  } catch (err) {
+    throw err instanceof Error ? err : apiError(err, 'Failed to confirm the upload.');
+  }
+}
+
+export async function getReportGenerationJobStatus(jobId: string): Promise<ReportGenerationJobStatus> {
+  try {
+    const res = await apiAxiosInstance.get<ApiResponse<ReportGenerationJobStatus>>(
+      `/report-generator/jobs/${jobId}`
+    );
+    return extractData(res.data);
+  } catch (err) {
+    throw err instanceof Error ? err : apiError(err, 'Failed to check job status.');
+  }
+}
+
+/** Imperative poll-until-done, for use inside an already-async handler (e.g. handleGenerateReport)
+ * rather than a React hook — hooks can't be invoked conditionally/imperatively from a callback.
+ * useReportGenerationJob (the hook) covers the "dedicated screen watching a job" case instead. */
+export async function pollReportGenerationJobUntilDone(
+  jobId: string,
+  options?: { intervalMs?: number; timeoutMs?: number }
+): Promise<ReportGenerationJobStatus> {
+  const intervalMs = options?.intervalMs ?? 5000;
+  const timeoutMs = options?.timeoutMs ?? 20 * 60 * 1000;
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    const status = await getReportGenerationJobStatus(jobId);
+    if (status.status === 'Completed' || status.status === 'Failed') return status;
+    if (Date.now() >= deadline) throw new Error('Timed out waiting for report generation to finish.');
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+}
+
 /** `mode` and `isRefinement` drive Report Stats' generation-event log (koru-main only writes a
  * ReportGenerationEvent row when isRefinement is falsy) — pass `isRefinement: true` for a filter
  * re-apply against an already-generated report so it isn't double-counted as a new report.
