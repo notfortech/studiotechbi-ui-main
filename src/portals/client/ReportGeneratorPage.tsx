@@ -99,11 +99,16 @@ import {
   generateReport,
   getReportAiSummary,
   verifyHtmlTemplateMatch,
+  getUploadLimits,
+  initReportUpload,
+  completeReportUpload,
+  pollReportGenerationJobUntilDone,
   type GeneratedReport,
   type ReportChart,
   type ReportAiSummary,
   type HtmlTemplateCandidate,
 } from "../../api/reportGeneratorApi";
+import { uploadFileToBlob } from "../../services/reportUploadService";
 import { REPORT_THEMES, themeById, MiniReportPreview, type VisualTheme } from "./reportThemes";
 import { getCreditBalance, type CreditBalance } from "../../api/creditsApi";
 import { setPreferredThemeId } from "../../core/reportTheme";
@@ -166,8 +171,39 @@ function formatElapsed(seconds: number): string {
 
 // ── Step 0: Connect Data ──────────────────────────────────────────────────────
 
-function ConnectDataStep({ uploadedFile, onUpload }: { uploadedFile: File | null; onUpload: (f: File) => void }) {
+const DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // fallback only, used if the server call fails
+
+function ConnectDataStep({
+  uploadedFile,
+  onUpload,
+  maxUploadBytes,
+  maxAsyncUploadBytes,
+}: {
+  uploadedFile: File | null;
+  onUpload: (f: File) => void;
+  maxUploadBytes: number;
+  maxAsyncUploadBytes: number;
+}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [sizeError, setSizeError] = useState<string | null>(null);
+
+  const maxAsyncUploadMb = Math.round(maxAsyncUploadBytes / (1024 * 1024));
+
+  const handleFileSelected = (f: File) => {
+    if (f.size > maxAsyncUploadBytes) {
+      setSizeError(
+        `"${f.name}" is ${(f.size / (1024 * 1024)).toFixed(1)} MB, which exceeds the ${maxAsyncUploadMb} MB limit. ` +
+        `Please upload a smaller file.`
+      );
+      return;
+    }
+    setSizeError(null);
+    onUpload(f);
+  };
+
+  // Files at/above this go through direct-to-blob background processing instead of the instant
+  // path -- purely informational, not a size rejection (handled above, against the real ceiling).
+  const willProcessInBackground = uploadedFile !== null && uploadedFile.size > maxUploadBytes;
 
   return (
     <Box>
@@ -179,7 +215,7 @@ function ConnectDataStep({ uploadedFile, onUpload }: { uploadedFile: File | null
 
       <input ref={fileInputRef} type="file" accept=".xlsx,.csv" style={{ display: "none" }}
         data-testid="report-file-input"
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f); }} />
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileSelected(f); }} />
       <Box onClick={() => fileInputRef.current?.click()} sx={{
         border: "2px dashed", borderColor: uploadedFile ? "primary.main" : "divider",
         borderRadius: 2, p: 4, textAlign: "center", cursor: "pointer",
@@ -199,10 +235,23 @@ function ConnectDataStep({ uploadedFile, onUpload }: { uploadedFile: File | null
           <Stack alignItems="center" spacing={1}>
             <UploadIcon sx={{ fontSize: 40, color: "text.disabled" }} />
             <Typography fontWeight={600}>Click to upload</Typography>
-            <Typography variant="body2" color="text.secondary">Supports .xlsx, .csv · max 50 MB</Typography>
+            <Typography variant="body2" color="text.secondary">Supports .xlsx, .csv · max {maxAsyncUploadMb} MB</Typography>
           </Stack>
         )}
       </Box>
+
+      {sizeError && (
+        <Alert severity="error" sx={{ mt: 2 }} onClose={() => setSizeError(null)} data-testid="report-file-size-error">
+          {sizeError}
+        </Alert>
+      )}
+
+      {willProcessInBackground && !sizeError && (
+        <Alert severity="info" sx={{ mt: 2 }} data-testid="report-file-background-processing-note">
+          This file is large enough that it'll upload directly and process in the background —
+          you'll see progress on the next step, and the report will be ready shortly after.
+        </Alert>
+      )}
 
       <Alert severity="info" sx={{ mt: 3 }}>
         SQL Database and SharePoint connections are being re-added here soon — for now, upload a file directly.
@@ -1497,6 +1546,24 @@ export function ReportGeneratorPage() {
 
   const [selectedTheme, setSelectedTheme] = useState<number | null>(null);
 
+  // Large-file (direct-to-blob async) upload thresholds — fetched once, used both to route
+  // handleGenerateReport/refetchWithFilters and to gate ConnectDataStep's own client-side check.
+  const [maxUploadBytes, setMaxUploadBytes] = useState(DEFAULT_MAX_UPLOAD_BYTES);
+  const [maxAsyncUploadBytes, setMaxAsyncUploadBytes] = useState(DEFAULT_MAX_UPLOAD_BYTES);
+  const [uploadProgressPct, setUploadProgressPct] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getUploadLimits()
+      .then((limits) => {
+        if (cancelled) return;
+        setMaxUploadBytes(limits.maxUploadBytes);
+        setMaxAsyncUploadBytes(limits.maxAsyncUploadBytes);
+      })
+      .catch(() => { /* keep the defaults */ });
+    return () => { cancelled = true; };
+  }, []);
+
   const [report, setReport] = useState<GeneratedReport | null>(null);
   const [reportGenerating, setReportGenerating] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
@@ -1701,15 +1768,50 @@ export function ReportGeneratorPage() {
     }
   }
 
+  // Large-file path: direct-to-blob upload (this app tier never buffers the file) + durable async
+  // processing, instead of the multipart POST generateReport() does. Same optional fields, same
+  // result shape -- the caller doesn't need to know which path actually ran.
+  async function runLargeFileGeneration(
+    file: File,
+    templateId: string | undefined,
+    filters: Record<string, string> | undefined,
+    htmlTemplateId: string | undefined,
+    isRefinement: boolean
+  ): Promise<GeneratedReport> {
+    setUploadProgressPct(0);
+    try {
+      const init = await initReportUpload(file.name);
+      await uploadFileToBlob(init.writeUrl, file, (loaded, total) => {
+        if (total > 0) setUploadProgressPct(Math.round((loaded / total) * 100));
+      });
+      await completeReportUpload(
+        init.jobId, templateId, filters, htmlTemplateId, mode, isRefinement,
+        theme.primary, theme.dark, theme.light, theme.bg
+      );
+      setUploadProgressPct(null);
+      const status = await pollReportGenerationJobUntilDone(init.jobId);
+      if (status.status === "Failed" || !status.result) {
+        throw new Error(status.errorMessage ?? "Report generation failed.");
+      }
+      return status.result;
+    } finally {
+      setUploadProgressPct(null);
+    }
+  }
+
   async function handleGenerateReport() {
     if (!uploadedFile) return;
     setReportError(null);
     setReportGenerating(true);
     try {
-      const result = await generateReport(
-        uploadedFile, undefined, undefined, selectedHtmlTemplateId ?? undefined, mode,
-        undefined, theme.primary, theme.dark, theme.light, theme.bg
-      );
+      const result = uploadedFile.size > maxUploadBytes
+        ? await runLargeFileGeneration(
+            uploadedFile, undefined, undefined, selectedHtmlTemplateId ?? undefined, false
+          )
+        : await generateReport(
+            uploadedFile, undefined, undefined, selectedHtmlTemplateId ?? undefined, mode,
+            undefined, theme.primary, theme.dark, theme.light, theme.bg
+          );
       setReport(result);
       setFlowStep("report");
 
@@ -1748,10 +1850,12 @@ export function ReportGeneratorPage() {
     setRefreshing(true);
     setReportError(null);
     try {
-      const result = await generateReport(
-        uploadedFile, report.templateId, filters, undefined, mode, true,
-        theme.primary, theme.dark, theme.light, theme.bg
-      );
+      const result = uploadedFile.size > maxUploadBytes
+        ? await runLargeFileGeneration(uploadedFile, report.templateId, filters, undefined, true)
+        : await generateReport(
+            uploadedFile, report.templateId, filters, undefined, mode, true,
+            theme.primary, theme.dark, theme.light, theme.bg
+          );
       setReport(result);
     } catch (err) {
       setReportError(err instanceof Error ? err.message : "Failed to apply filter.");
@@ -1829,6 +1933,9 @@ export function ReportGeneratorPage() {
   const canProceedModel = !modelGenerating && !verifyingHtmlMatch;
   // A confirmed HTML template match needs no theme pick -- only the no-match fallback report does.
   const canProceedTemplate = (selectedTheme !== null || !!selectedHtmlTemplateId) && !reportGenerating;
+  const reportGeneratingLabel = uploadProgressPct !== null
+    ? `Uploading… ${uploadProgressPct}%`
+    : "Generating report…";
   const badgeKind: TrustBadgeKind = flowStep === "report" ? "deterministic" : mode === "strict" ? "deterministic" : "ai";
 
   return (
@@ -1862,7 +1969,12 @@ export function ReportGeneratorPage() {
         {flowStep === "connect" && (
           <>
             <ModeToggle mode={mode} onChange={setMode} />
-            <ConnectDataStep uploadedFile={uploadedFile} onUpload={setUploadedFile} />
+            <ConnectDataStep
+              uploadedFile={uploadedFile}
+              onUpload={setUploadedFile}
+              maxUploadBytes={maxUploadBytes}
+              maxAsyncUploadBytes={maxAsyncUploadBytes}
+            />
             {extractError && <Alert severity="error" sx={{ mt: 2 }}>{extractError}</Alert>}
           </>
         )}
@@ -2004,7 +2116,7 @@ export function ReportGeneratorPage() {
               {modelGenerating
                 ? "Generating model…"
                 : reportGenerating
-                ? "Generating report…"
+                ? reportGeneratingLabel
                 : selectedHtmlTemplateId
                 ? "Generate Report"
                 : "Next"}
@@ -2015,7 +2127,7 @@ export function ReportGeneratorPage() {
               disabled={!canProceedTemplate}
               onClick={handleGenerateReport}
               startIcon={reportGenerating ? <CircularProgress size={16} color="inherit" /> : undefined}>
-              {reportGenerating ? "Generating report…" : "Generate Report"}
+              {reportGenerating ? reportGeneratingLabel : "Generate Report"}
             </Button>
           )}
           {flowStep === "report" && (
