@@ -14,6 +14,7 @@ export interface CustomReportRequestSummary {
   sourceFileName?: string | null;
   createdAt: string;
   fulfilledAtUtc?: string | null;
+  exportedToBlobAtUtc?: string | null;
 }
 
 export interface CustomReportRequestDetail {
@@ -28,6 +29,8 @@ export interface CustomReportRequestDetail {
   fulfilledSavedReportId?: string | null;
   fulfilledAtUtc?: string | null;
   fulfilledByEmail?: string | null;
+  blobPath?: string | null;
+  exportedToBlobAtUtc?: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -91,5 +94,21 @@ export async function fulfillReportRequest(
     return extractData(res.data);
   } catch (err) {
     throw err instanceof Error ? err : apiError(err, 'Failed to mark this request fulfilled.');
+  }
+}
+
+/** Writes this request's schema snapshot to blob storage on demand -- the hand-off point for
+ * feeding a no-template-match data shape into the template-generating agent. Safe to call again
+ * on an already-exported request; it just overwrites the same blob path. */
+export async function exportReportRequestToBlob(
+  requestId: string
+): Promise<{ blobPath: string; exportedToBlobAtUtc: string }> {
+  try {
+    const res = await apiAxiosInstance.post<ApiResponse<{ blobPath: string; exportedToBlobAtUtc: string }>>(
+      `/admin/report-requests/${requestId}/export-to-blob`
+    );
+    return extractData(res.data);
+  } catch (err) {
+    throw err instanceof Error ? err : apiError(err, 'Failed to export this request to blob storage.');
   }
 }

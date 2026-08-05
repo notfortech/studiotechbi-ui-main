@@ -96,12 +96,13 @@ export const AdminReportRequestsPage = () => {
                   <TableCell>Source File</TableCell>
                   <TableCell sx={{ width: 200 }}>Requested</TableCell>
                   <TableCell sx={{ width: 200 }}>Fulfilled</TableCell>
+                  <TableCell sx={{ width: 130 }}>Exported</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {requests.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 6 }} color="text.secondary">
+                    <TableCell colSpan={6} align="center" sx={{ py: 6 }} color="text.secondary">
                       No custom report requests yet.
                     </TableCell>
                   </TableRow>
@@ -122,6 +123,11 @@ export const AdminReportRequestsPage = () => {
                         <TableCell>{r.sourceFileName ?? '—'}</TableCell>
                         <TableCell>{formatDate(r.createdAt)}</TableCell>
                         <TableCell>{formatDate(r.fulfilledAtUtc)}</TableCell>
+                        <TableCell>
+                          {r.exportedToBlobAtUtc ? (
+                            <Chip label="Exported" size="small" color="success" variant="outlined" />
+                          ) : '—'}
+                        </TableCell>
                       </TableRow>
                     );
                   })

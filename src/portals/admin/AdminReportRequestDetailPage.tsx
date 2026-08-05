@@ -14,12 +14,17 @@ import {
   TableHead,
   TableRow,
 } from '@mui/material';
-import { ArrowBack as BackIcon, CheckCircleOutline as FulfillIcon } from '@mui/icons-material';
+import {
+  ArrowBack as BackIcon,
+  CheckCircleOutline as FulfillIcon,
+  CloudUploadOutlined as ExportIcon,
+} from '@mui/icons-material';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   getReportRequest,
   fulfillReportRequest,
+  exportReportRequestToBlob,
   type CustomReportRequestDetail,
 } from '../../api/adminReportRequestsApi';
 import { ROUTES } from '../../core/constants';
@@ -36,6 +41,9 @@ export const AdminReportRequestDetailPage = () => {
   const [powerBiAssetId, setPowerBiAssetId] = useState('');
   const [fulfilling, setFulfilling] = useState(false);
   const [fulfillError, setFulfillError] = useState<string | null>(null);
+
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const load = async () => {
     if (!requestId) return;
@@ -66,6 +74,20 @@ export const AdminReportRequestDetailPage = () => {
       setFulfillError(err instanceof Error ? err.message : 'Failed to mark this request fulfilled.');
     } finally {
       setFulfilling(false);
+    }
+  };
+
+  const handleExportToBlob = async () => {
+    if (!requestId) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      await exportReportRequestToBlob(requestId);
+      await load();
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Failed to export this request to blob storage.');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -121,7 +143,26 @@ export const AdminReportRequestDetailPage = () => {
           </Paper>
 
           <Paper variant="outlined" sx={{ p: 3 }}>
-            <Typography variant="h6" fontWeight={700} gutterBottom>Client Schema</Typography>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1.5} sx={{ mb: 1 }}>
+              <Typography variant="h6" fontWeight={700}>Client Schema</Typography>
+              {detail.schema && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={exporting ? <CircularProgress size={16} color="inherit" /> : <ExportIcon />}
+                  disabled={exporting}
+                  onClick={() => void handleExportToBlob()}
+                >
+                  {exporting ? "Exporting…" : detail.exportedToBlobAtUtc ? "Re-export to Blob" : "Export to Blob"}
+                </Button>
+              )}
+            </Stack>
+            {exportError && <Alert severity="error" sx={{ mb: 2 }}>{exportError}</Alert>}
+            {detail.exportedToBlobAtUtc && (
+              <Alert severity="success" sx={{ mb: 2 }}>
+                Exported {formatDate(detail.exportedToBlobAtUtc)} — <code>{detail.blobPath}</code>
+              </Alert>
+            )}
             {detail.schema ? (
               <Stack spacing={2}>
                 {detail.schema.tables.map((table) => (
