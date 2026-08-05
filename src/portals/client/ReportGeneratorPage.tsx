@@ -53,7 +53,7 @@ import {
 } from "@mui/icons-material";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { ROUTES } from "../../core/constants";
@@ -110,6 +110,7 @@ import {
 } from "../../api/reportGeneratorApi";
 import { uploadFileToBlob } from "../../services/reportUploadService";
 import { REPORT_THEMES, themeById, MiniReportPreview, type VisualTheme } from "./reportThemes";
+import { REPORT_PALETTES, applyReportPalette } from "../../utils/reportPaletteOverride";
 import { getCreditBalance, type CreditBalance } from "../../api/creditsApi";
 import { setPreferredThemeId } from "../../core/reportTheme";
 import { TrustBadge, type TrustBadgeKind } from "../../components/common/TrustBadge";
@@ -1150,17 +1151,30 @@ function ReportResultsStep({
   const [savedReportId, setSavedReportId] = useState<string | null>(null);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [exportPdfError, setExportPdfError] = useState<string | null>(null);
+  const [selectedPaletteIndex, setSelectedPaletteIndex] = useState<number | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
   // A newly generated/refreshed report (new file, filter, or template) invalidates any cached
-  // AI summary and the "already saved" state — both were grounded on the previous result.
+  // AI summary and the "already saved" state — both were grounded on the previous result. The
+  // palette choice is a per-report view preference too, not something that should carry over to
+  // an unrelated file/filter/template.
   useEffect(() => {
     setAiSummary(null);
     setAiError(null);
     setSavedReportId(null);
     setSaveError(null);
     setExportPdfError(null);
+    setSelectedPaletteIndex(null);
   }, [report]);
+
+  // Frontend-only -- no backend round-trip, no re-generation. Recomputed only when the report's
+  // own HTML or the palette choice changes, not on every render (rebuilding the string on every
+  // keystroke elsewhere on the page would otherwise force the iframe to reload needlessly).
+  const displayedHtml = useMemo(() => {
+    if (!report.htmlReport) return report.htmlReport;
+    if (selectedPaletteIndex === null) return report.htmlReport;
+    return applyReportPalette(report.htmlReport, report.htmlTemplateId ?? null, REPORT_PALETTES[selectedPaletteIndex]);
+  }, [report.htmlReport, report.htmlTemplateId, selectedPaletteIndex]);
 
   const handleOpenAiSummary = async () => {
     setAiPanelOpen(true);
@@ -1254,7 +1268,10 @@ function ReportResultsStep({
     setSaving(true);
     setSaveError(null);
     try {
-      const result = await saveReport(report, sourceFileName);
+      // Saves whatever is actually on screen, including any client-side palette override --
+      // "what you see is what gets saved," consistent with how this save has always worked
+      // (the exact on-screen string, per HtmlReportAssemblyService's own design intent).
+      const result = await saveReport({ ...report, htmlReport: displayedHtml }, sourceFileName);
       setSavedReportId(result.savedReportId);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Failed to save report.");
@@ -1379,18 +1396,53 @@ function ReportResultsStep({
         }
       >
         {report.htmlReport ? (
-          // Interactive HTML report template, primary format — sandboxed iframe with srcDoc
-          // (never dangerouslySetInnerHTML, which would execute the template's inline <script>
-          // in this document's own origin, with access to authToken/cookies). "allow-scripts"
-          // without "allow-same-origin" means the iframe's own JS can drive its own client-side
-          // filtering but can't read anything of this app's.
-          <iframe
-            title={report.templateName ?? "Report"}
-            srcDoc={report.htmlReport}
-            sandbox="allow-scripts"
-            style={{ width: "100%", height: "80vh", border: "none", borderRadius: 8 }}
-            data-testid="report-html-frame"
-          />
+          <>
+            {/* Frontend-only, ephemeral view preference — never re-generates or hits the
+                backend; see reportPaletteOverride.ts for how this rewrites the HTML string. */}
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" gap={1} sx={{ mb: 1.5 }}>
+              <MuiTooltip title="Change this report's colors — a display preference only, doesn't affect the underlying data">
+                <PaletteIcon fontSize="small" sx={{ color: "text.secondary" }} />
+              </MuiTooltip>
+              <MuiTooltip title="Template default">
+                <Box
+                  onClick={() => setSelectedPaletteIndex(null)}
+                  data-testid="report-palette-swatch-default"
+                  sx={{
+                    width: 24, height: 24, borderRadius: "50%", cursor: "pointer",
+                    border: (t) => `2px solid ${selectedPaletteIndex === null ? t.palette.text.primary : "transparent"}`,
+                    background: "repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50% / 10px 10px",
+                    boxShadow: "0 0 0 1px rgba(0,0,0,0.12) inset",
+                  }}
+                />
+              </MuiTooltip>
+              {REPORT_PALETTES.map((p, i) => (
+                <MuiTooltip key={p.name} title={p.name}>
+                  <Box
+                    onClick={() => setSelectedPaletteIndex(i)}
+                    data-testid={`report-palette-swatch-${i}`}
+                    sx={{
+                      width: 24, height: 24, borderRadius: "50%", cursor: "pointer",
+                      background: `linear-gradient(135deg, ${p.primary} 50%, ${p.accent} 50%)`,
+                      border: (t) => `2px solid ${selectedPaletteIndex === i ? t.palette.text.primary : "transparent"}`,
+                      boxShadow: "0 0 0 1px rgba(0,0,0,0.12) inset",
+                    }}
+                  />
+                </MuiTooltip>
+              ))}
+            </Stack>
+            {/* Interactive HTML report template, primary format — sandboxed iframe with srcDoc
+                (never dangerouslySetInnerHTML, which would execute the template's inline
+                <script> in this document's own origin, with access to authToken/cookies).
+                "allow-scripts" without "allow-same-origin" means the iframe's own JS can drive
+                its own client-side filtering but can't read anything of this app's. */}
+            <iframe
+              title={report.templateName ?? "Report"}
+              srcDoc={displayedHtml ?? undefined}
+              sandbox="allow-scripts"
+              style={{ width: "100%", height: "80vh", border: "none", borderRadius: 8 }}
+              data-testid="report-html-frame"
+            />
+          </>
         ) : (
           // Fallback: no HTML template matched this dataset at all — the original KPI/chart grid,
           // unchanged, so a report is never a hard failure just because nothing in the (still-

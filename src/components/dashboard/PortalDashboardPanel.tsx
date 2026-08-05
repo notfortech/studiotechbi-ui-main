@@ -23,11 +23,15 @@ import {
   Description,
   AccountBalance,
   TrendingUp,
+  AutoGraph,
+  Toll,
 } from '@mui/icons-material';
 import {
   ResponsiveContainer,
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -97,7 +101,7 @@ function copyForDashboard(
       pageSubtitle: 'Your financial overview and account information',
       balanceLabel: 'Net position',
       growthLabel: 'Growth rate',
-      chartTitle: 'Financial performance',
+      chartTitle: 'Reports generated',
     };
   }
   return {
@@ -176,7 +180,9 @@ export function PortalDashboardPanel({
   const copy = copyForDashboard(role, hasSelectedClient);
   const kpis = data?.kpis;
   const chartData = data?.chartData ?? [];
+  const reportGenerationChartData = data?.reportGenerationChartData ?? [];
   const showVariance = chartData.some((p) => p.variance != null);
+  const isClient = role === 'client';
   const [reportStatsOpen, setReportStatsOpen] = useState(false);
 
   const handleQuickAction = (actionKey: string) => {
@@ -214,6 +220,30 @@ export function PortalDashboardPanel({
             icon: <TrendingUp />,
             color: NAVY[500],
           },
+          // Client view only -- reportsGenerated/aiCreditsRemaining are null for accountant view
+          // (not a single-client concept), so these two tiles simply don't render there.
+          ...(kpis.reportsGenerated != null
+            ? [
+                {
+                  title: 'Reports generated',
+                  rawValue: kpis.reportsGenerated,
+                  formatter: (n: number) => String(Math.round(n)),
+                  icon: <AutoGraph />,
+                  color: NAVY[700],
+                },
+              ]
+            : []),
+          ...(kpis.aiCreditsRemaining != null
+            ? [
+                {
+                  title: 'AI credits remaining',
+                  rawValue: kpis.aiCreditsRemaining,
+                  formatter: (n: number) => String(Math.round(n)),
+                  icon: <Toll />,
+                  color: BRASS[700],
+                },
+              ]
+            : []),
         ]
       : [];
 
@@ -315,7 +345,34 @@ export function PortalDashboardPanel({
               <Typography variant="h6" fontWeight={600} gutterBottom>
                 {copy.chartTitle}
               </Typography>
-              {chartData.length === 0 ? (
+              {isClient ? (
+                reportGenerationChartData.every((p) => p.count === 0) ? (
+                  <Box
+                    sx={{
+                      height: 300,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'text.secondary',
+                    }}
+                  >
+                    <Typography>No reports generated in this period yet</Typography>
+                  </Box>
+                ) : (
+                  <ResponsiveContainer width="100%" height={320}>
+                    <BarChart data={reportGenerationChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" tickFormatter={formatMonthTick} />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip
+                        formatter={(value) => (typeof value === 'number' ? value.toLocaleString() : String(value ?? ''))}
+                        labelFormatter={(label) => (typeof label === 'string' ? formatMonthTick(label) : '')}
+                      />
+                      <Bar dataKey="count" name="Reports generated" fill={BRASS[500]} radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )
+              ) : chartData.length === 0 ? (
                 <Box
                   sx={{
                     height: 300,
