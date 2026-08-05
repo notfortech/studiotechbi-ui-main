@@ -29,6 +29,8 @@ import { useAuth } from '../../auth/AuthContext';
 
 interface ClientSidebarProps {
   open: boolean;
+  isMobile: boolean;
+  onClose: () => void;
 }
 
 const BASE_NAVIGATION_ITEMS: NavigationItem[] = [
@@ -57,7 +59,7 @@ const ACCENT = '#C99C55'; // brass — the one accent this dark surface gets
 const SIDEBAR_INSET = 16;
 const SIDEBAR_TOP_OFFSET = 84;
 
-export const ClientSidebar = ({ open }: ClientSidebarProps) => {
+export const ClientSidebar = ({ open, isMobile, onClose }: ClientSidebarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const branding = useClientBranding();
@@ -76,12 +78,17 @@ export const ClientSidebar = ({ open }: ClientSidebarProps) => {
 
   const handleNavigation = (path: string) => {
     navigate(path);
+    // On mobile the drawer overlays content instead of pushing it, so it needs to get out of
+    // the way after a selection the same way any mobile nav menu would.
+    if (isMobile) onClose();
   };
 
   return (
     <Drawer
-      variant="persistent"
+      variant={isMobile ? 'temporary' : 'persistent'}
       open={open}
+      onClose={onClose}
+      ModalProps={{ keepMounted: true }}
       sx={{
         width: open ? DRAWER_WIDTH : 0,
         flexShrink: 0,

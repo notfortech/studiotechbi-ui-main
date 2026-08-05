@@ -21,6 +21,8 @@ import { NavigationItem } from '../../core/types';
 
 interface AccountantSidebarProps {
   open: boolean;
+  isMobile: boolean;
+  onClose: () => void;
 }
 
 const navigationItems: NavigationItem[] = [
@@ -29,18 +31,21 @@ const navigationItems: NavigationItem[] = [
   { id: 'reports', title: 'Reports', path: ROUTES.ACCOUNTANT.REPORTS, icon: <AssessmentIcon /> },
 ];
 
-export const AccountantSidebar = ({ open }: AccountantSidebarProps) => {
+export const AccountantSidebar = ({ open, isMobile, onClose }: AccountantSidebarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
 
   const handleNavigation = (path: string) => {
     navigate(path);
+    if (isMobile) onClose();
   };
 
   return (
     <Drawer
-      variant="persistent"
+      variant={isMobile ? 'temporary' : 'persistent'}
       open={open}
+      onClose={onClose}
+      ModalProps={{ keepMounted: true }}
       sx={{
         width: DRAWER_WIDTH,
         flexShrink: 0,
