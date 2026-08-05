@@ -49,7 +49,10 @@ import {
   FactCheck as VerifyMatchIcon,
   VerifiedOutlined as ValidateReportIcon,
   SupportAgent as CustomReportIcon,
+  PictureAsPdf as PdfExportIcon,
 } from "@mui/icons-material";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
@@ -1095,6 +1098,9 @@ function ReportResultsStep({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedReportId, setSavedReportId] = useState<string | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportPdfError, setExportPdfError] = useState<string | null>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   // A newly generated/refreshed report (new file, filter, or template) invalidates any cached
   // AI summary and the "already saved" state — both were grounded on the previous result.
@@ -1103,6 +1109,7 @@ function ReportResultsStep({
     setAiError(null);
     setSavedReportId(null);
     setSaveError(null);
+    setExportPdfError(null);
   }, [report]);
 
   const handleOpenAiSummary = async () => {
@@ -1117,6 +1124,79 @@ function ReportResultsStep({
       setAiError(err instanceof Error ? err.message : "Failed to generate AI summary.");
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  // No HTML template matched, so there's no "Save Report" option (that requires report.htmlReport)
+  // and nothing to print natively either -- this is the only export path for that fallback view.
+  // Reuses whatever AI summary is already cached (e.g. the client opened "Ask AI Assistant"
+  // already); otherwise fetches one fresh so the PDF always ships with a description, not just
+  // raw numbers.
+  const handleExportPdf = async () => {
+    if (!resultsRef.current) return;
+    setExportingPdf(true);
+    setExportPdfError(null);
+    try {
+      let summaryText = aiSummary?.summary ?? null;
+      if (summaryText === null) {
+        try {
+          const result = await getReportAiSummary(report);
+          setAiSummary(result);
+          summaryText = result.summary ?? null;
+        } catch {
+          // Best-effort -- a failed AI summary must never block the PDF the client asked for.
+        }
+      }
+
+      const canvas = await html2canvas(resultsRef.current, { scale: 2, backgroundColor: null });
+      const imgData = canvas.toDataURL("image/png");
+
+      const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 40;
+
+      doc.setFontSize(18);
+      doc.text(report.templateName ?? "Report", margin, margin + 10);
+      doc.setFontSize(10);
+      doc.setTextColor(120);
+      doc.text(`Generated ${new Date().toLocaleString()}`, margin, margin + 32);
+      doc.setTextColor(0);
+
+      // Paginate the captured KPI/chart grid across as many pages as it needs, by redrawing the
+      // same full-height image at a rising negative offset each page -- jsPDF clips anything
+      // outside the page bounds, so each page just reveals the next slice.
+      const imgWidth = pageWidth - margin * 2;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const usableHeight = pageHeight - margin * 2;
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      doc.addPage();
+      doc.addImage(imgData, "PNG", margin, margin - position, imgWidth, imgHeight);
+      heightLeft -= usableHeight;
+      while (heightLeft > 0) {
+        position += usableHeight;
+        doc.addPage();
+        doc.addImage(imgData, "PNG", margin, margin - position, imgWidth, imgHeight);
+        heightLeft -= usableHeight;
+      }
+
+      if (summaryText) {
+        doc.addPage();
+        doc.setFontSize(14);
+        doc.text("AI Summary", margin, margin);
+        doc.setFontSize(10);
+        const lines = doc.splitTextToSize(summaryText, pageWidth - margin * 2);
+        doc.text(lines, margin, margin + 24);
+      }
+
+      const fileSlug = (report.templateName ?? "report").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+      doc.save(`${fileSlug}.pdf`);
+    } catch (err) {
+      setExportPdfError(err instanceof Error ? err.message : "Failed to export PDF.");
+    } finally {
+      setExportingPdf(false);
     }
   };
 
@@ -1212,6 +1292,15 @@ function ReportResultsStep({
           <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" gap={1}>
             <Button
               size="small"
+              variant="outlined"
+              startIcon={exportingPdf ? <CircularProgress size={16} color="inherit" /> : <PdfExportIcon />}
+              disabled={exportingPdf}
+              onClick={() => void handleExportPdf()}
+            >
+              {exportingPdf ? "Exporting…" : "Export PDF"}
+            </Button>
+            <Button
+              size="small"
               variant="text"
               color="secondary"
               startIcon={requestingCustomReport ? <CircularProgress size={16} color="inherit" /> : <CustomReportIcon />}
@@ -1225,11 +1314,13 @@ function ReportResultsStep({
                 : "Request a custom Power BI report"}
             </Button>
           </Stack>
+          {exportPdfError && <Alert severity="error">{exportPdfError}</Alert>}
           {customReportError && <Alert severity="error">{customReportError}</Alert>}
         </Stack>
       )}
 
       <Box
+        ref={resultsRef}
         data-testid="report-results-loaded"
         sx={
           theme.mode === "dark"
