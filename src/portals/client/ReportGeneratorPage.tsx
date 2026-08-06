@@ -50,6 +50,7 @@ import {
   VerifiedOutlined as ValidateReportIcon,
   SupportAgent as CustomReportIcon,
   PictureAsPdf as PdfExportIcon,
+  FileDownloadOutlined as DownloadDatasetIcon,
 } from "@mui/icons-material";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -103,6 +104,7 @@ import {
   initReportUpload,
   completeReportUpload,
   pollReportGenerationJobUntilDone,
+  downloadBlendedDataset,
   type GeneratedReport,
   type ReportChart,
   type ReportAiSummary,
@@ -1125,6 +1127,8 @@ function ReportResultsStep({
   const [savedReportId, setSavedReportId] = useState<string | null>(null);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [exportPdfError, setExportPdfError] = useState<string | null>(null);
+  const [downloadingBlend, setDownloadingBlend] = useState(false);
+  const [downloadBlendError, setDownloadBlendError] = useState<string | null>(null);
   const [selectedPaletteIndex, setSelectedPaletteIndex] = useState<number | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -1194,6 +1198,21 @@ function ReportResultsStep({
       }
 
       const canvas = await html2canvas(resultsRef.current, { scale: 2, backgroundColor: null });
+
+      // Always render the exported PDF in black-and-white, regardless of the report's active
+      // color theme/palette -- keeps the data and visuals unambiguous on paper. Desaturating the
+      // captured canvas pixels (rather than mutating the live DOM/CSS before capture) guarantees a
+      // true grayscale image regardless of what on-screen palette was active.
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          data[i] = data[i + 1] = data[i + 2] = gray;
+        }
+        ctx.putImageData(imageData, 0, 0);
+      }
       const imgData = canvas.toDataURL("image/png");
 
       const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
@@ -1207,6 +1226,32 @@ function ReportResultsStep({
       doc.setTextColor(120);
       doc.text(`Generated ${new Date().toLocaleString()}`, margin, margin + 32);
       doc.setTextColor(0);
+
+      // AI-assisted "closest template" blend fallback only: bake the blend disclaimer into the
+      // PDF text itself (page 1, a dedicated text-only page) rather than relying on the on-screen
+      // banner being inside the screenshotted region (it isn't) -- this way the note survives into
+      // any PDF a client exports and keeps/shares from this fallback view.
+      if (report.blendNote) {
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        doc.text("Note: this report includes proposed sample data", margin, margin + 56);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        const noteLines = doc.splitTextToSize(report.blendNote, pageWidth - margin * 2);
+        doc.text(noteLines, margin, margin + 72);
+
+        const mockedColumns = Array.from(
+          new Set((report.blendProvenance ?? []).filter((p) => p.source === "mocked").map((p) => p.column))
+        );
+        if (mockedColumns.length > 0) {
+          const colLines = doc.splitTextToSize(
+            `Proposed columns: ${mockedColumns.join(", ")}`,
+            pageWidth - margin * 2
+          );
+          doc.text(colLines, margin, margin + 72 + noteLines.length * 11 + 12);
+        }
+        doc.setFontSize(10);
+      }
 
       // Paginate the captured KPI/chart grid across as many pages as it needs, by redrawing the
       // same full-height image at a rising negative offset each page -- jsPDF clips anything
@@ -1242,6 +1287,22 @@ function ReportResultsStep({
       setExportPdfError(err instanceof Error ? err.message : "Failed to export PDF.");
     } finally {
       setExportingPdf(false);
+    }
+  };
+
+  // Manual re-trigger for the closest-template blend fallback's proposed dataset -- the automatic
+  // download already fires once from handleGenerateReport; this covers a blocked popup/download or
+  // the client wanting the file again later in the same session.
+  const handleDownloadBlendedDataset = async () => {
+    if (!report.blendedDatasetDownloadUrl || !report.closestTemplateId) return;
+    setDownloadingBlend(true);
+    setDownloadBlendError(null);
+    try {
+      await downloadBlendedDataset(report.blendedDatasetDownloadUrl, report.closestTemplateId);
+    } catch (err) {
+      setDownloadBlendError(err instanceof Error ? err.message : "Failed to download the proposed dataset.");
+    } finally {
+      setDownloadingBlend(false);
     }
   };
 
@@ -1334,9 +1395,17 @@ function ReportResultsStep({
       {!report.htmlTemplateId && (
         <Stack spacing={1} sx={{ mb: 2 }}>
           <Alert severity="info">
-            No confident interactive template match yet for this data shape — showing the standard
-            metrics view below instead. Our team has been notified so we can add coverage.
+            {report.blendNote ??
+              "No confident interactive template match yet for this data shape — showing the standard metrics view below instead. Our team has been notified so we can add coverage."}
           </Alert>
+          {report.blendedDatasetDownloadUrl && report.blendProvenance && report.blendProvenance.some((p) => p.source === "mocked") && (
+            <Typography variant="body2" color="text.secondary">
+              Proposed additional columns:{" "}
+              {Array.from(
+                new Set(report.blendProvenance.filter((p) => p.source === "mocked").map((p) => p.column))
+              ).join(", ")}
+            </Typography>
+          )}
           <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" gap={1}>
             <Button
               size="small"
@@ -1347,6 +1416,17 @@ function ReportResultsStep({
             >
               {exportingPdf ? "Exporting…" : "Export PDF"}
             </Button>
+            {report.blendedDatasetDownloadUrl && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={downloadingBlend ? <CircularProgress size={16} color="inherit" /> : <DownloadDatasetIcon />}
+                disabled={downloadingBlend}
+                onClick={() => void handleDownloadBlendedDataset()}
+              >
+                {downloadingBlend ? "Downloading…" : "Download Proposed Dataset"}
+              </Button>
+            )}
             <Button
               size="small"
               variant="text"
@@ -1363,6 +1443,7 @@ function ReportResultsStep({
             </Button>
           </Stack>
           {exportPdfError && <Alert severity="error">{exportPdfError}</Alert>}
+          {downloadBlendError && <Alert severity="error">{downloadBlendError}</Alert>}
           {customReportError && <Alert severity="error">{customReportError}</Alert>}
         </Stack>
       )}
@@ -1866,6 +1947,15 @@ export function ReportGeneratorPage() {
           );
       setReport(result);
       setFlowStep("report");
+
+      // AI-assisted "closest template" blend fallback only: auto-download the proposed dataset
+      // once, right on the initial generation -- never on a filter-refinement re-generate (this
+      // block lives only in handleGenerateReport, not refetchWithFilters). Best-effort: a blocked
+      // download (popup blocker etc.) must never surface as a report-generation failure -- the
+      // "Download Proposed Dataset" button in the banner below covers that case.
+      if (result.blendedDatasetDownloadUrl && result.closestTemplateId) {
+        void downloadBlendedDataset(result.blendedDatasetDownloadUrl, result.closestTemplateId).catch(() => {});
+      }
 
       // Strict mode never runs the AI-assisted verify-match check, so this deterministic call is
       // often the *only* point that ever learns whether an HTML template matched. Extract the

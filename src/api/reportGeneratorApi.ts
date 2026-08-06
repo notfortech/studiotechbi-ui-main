@@ -1,6 +1,7 @@
 import { apiAxiosInstance } from '../services/apiClient';
 import { AxiosError } from 'axios';
 import type { AiSummary } from '../components/common/AiSummaryPanel';
+import type { ProvenanceEntry } from './reportDesignerApi';
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────
 // Mirrors koru-main's ReportGeneratorDtos.cs, which mirrors
@@ -71,6 +72,15 @@ export interface GeneratedReport {
    * injected) — render via <iframe srcDoc>, never dangerouslySetInnerHTML. Absent when no HTML
    * template matched at all; the caller falls back to the KPI/chart grid below in that case. */
   htmlReport?: string | null;
+  /** AI-assisted "closest template" fallback only (see ReportGeneratorController.GenerateAsync):
+   * populated when no confident HTML match existed, but a closest role-gate-passing candidate was
+   * found and blended with mock data for the gaps. htmlTemplateId/htmlReport stay null even here —
+   * this fallback always renders as the classic KPI/chart view (Export PDF only, no Save Report). */
+  closestTemplateId?: string | null;
+  closestTemplateName?: string | null;
+  blendProvenance?: ProvenanceEntry[] | null;
+  blendedDatasetDownloadUrl?: string | null;
+  blendNote?: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -286,6 +296,27 @@ export async function verifyHtmlTemplateMatch(file: File): Promise<HtmlTemplateC
   } catch (err) {
     throw err instanceof Error ? err : apiError(err, 'Failed to verify template match.');
   }
+}
+
+// ── Closest-template blend fallback (AI-assisted mode only) ─────────────────────
+// blendedDatasetDownloadUrl is a short-lived Azure Blob SAS URL, not a koru-main API path — fetch
+// it directly (no auth header, no apiAxiosInstance base URL) rather than routing through the API.
+
+/** Triggers a browser download of the proposed/blended dataset from its SAS URL, using the same
+ * createObjectURL/<a download>/revokeObjectURL sequence already used elsewhere in this app
+ * (see blueprintApi.ts's downloadBlueprintPdf, templateService.ts's downloadTemplate). */
+export async function downloadBlendedDataset(url: string, closestTemplateId: string): Promise<void> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Failed to download the proposed dataset.');
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = `${closestTemplateId}-proposed-data.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
 }
 
 // ── AI summary ────────────────────────────────────────────────────────────────
