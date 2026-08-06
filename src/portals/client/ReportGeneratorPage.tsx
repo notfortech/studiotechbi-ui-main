@@ -95,7 +95,7 @@ import {
   type ReportMatchResult,
   type AiProvider,
 } from "../../api/reportDesignerApi";
-import { requestCustomPowerBiReport } from "../../api/reportRequestsApi";
+import { requestCustomPowerBiReport, type CustomReportRequestReason } from "../../api/reportRequestsApi";
 import {
   generateReport,
   getReportAiSummary,
@@ -1819,7 +1819,11 @@ export function ReportGeneratorPage() {
       );
       setModelResult(model);
     } catch (err) {
-      setModelError(err instanceof Error ? err.message : "Model generation failed.");
+      // The one call in this wizard that actually costs an AI credit -- but koru-main only debits
+      // the ledger after a confirmed success (see GenerateReportModelAsync's try/catch), so a
+      // thrown error here is guaranteed to mean nothing was charged. Safe to state unconditionally.
+      const message = err instanceof Error ? err.message : "Model generation failed.";
+      setModelError(`${message} This didn't use any of your AI credits.`);
     } finally {
       setModelGenerating(false);
       modelAbortRef.current = null;
@@ -1861,7 +1865,8 @@ export function ReportGeneratorPage() {
       // client needs a real template or just a retry, but tagged distinctly for that triage.
       void autoFileCustomReportRequest(
         extractedSchema,
-        `Auto-filed: AI-assisted schema-model match failed with a technical error (${message}) — the client may just need to retry.`
+        `Auto-filed: AI-assisted schema-model match failed with a technical error (${message}) — the client may just need to retry.`,
+        "GenerationError"
       );
     } finally {
       setMatching(false);
@@ -1880,11 +1885,15 @@ export function ReportGeneratorPage() {
   // below, and the deterministic generate call in handleGenerateReport) so an admin always ends up
   // with a schema-carrying, admin-visible record. Guarded on customReportFiled by every caller so
   // re-running a check doesn't double-file.
-  async function autoFileCustomReportRequest(schema: ExtractedSchemaDto, note?: string) {
+  async function autoFileCustomReportRequest(
+    schema: ExtractedSchemaDto,
+    note?: string,
+    reason?: CustomReportRequestReason
+  ) {
     if (customReportFiled) return;
     setRequestingCustomReport(true);
     try {
-      const { requestId } = await requestCustomPowerBiReport(schema, note);
+      const { requestId } = await requestCustomPowerBiReport(schema, note, reason);
       setCustomReportRequestId(requestId);
       setCustomReportFiled(true);
     } catch (err) {
@@ -1916,7 +1925,8 @@ export function ReportGeneratorPage() {
       if (extractedSchema) {
         void autoFileCustomReportRequest(
           extractedSchema,
-          `Auto-filed: HTML template verify-match failed with a technical error (${message}) — the client may just need to retry.`
+          `Auto-filed: HTML template verify-match failed with a technical error (${message}) — the client may just need to retry.`,
+          "GenerationError"
         );
       }
     } finally {
@@ -2062,7 +2072,8 @@ export function ReportGeneratorPage() {
       if (schema) {
         void autoFileCustomReportRequest(
           schema,
-          `Auto-filed: report generation failed with a technical error (${message}) — the client may just need to retry.`
+          `Auto-filed: report generation failed with a technical error (${message}) — the client may just need to retry.`,
+          "GenerationError"
         );
       }
     } finally {
