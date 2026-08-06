@@ -115,7 +115,20 @@ export const AdminReportRequestDetailPage = () => {
                 size="small"
                 color={detail.status === 'Fulfilled' ? 'success' : detail.status === 'Declined' ? 'error' : 'default'}
               />
+              <Chip
+                label={detail.requestReason === 'GenerationError' ? 'AI/Network Error' : 'No Confident Match'}
+                size="small"
+                variant="outlined"
+                color={detail.requestReason === 'GenerationError' ? 'error' : 'default'}
+              />
             </Stack>
+            {detail.requestReason === 'GenerationError' && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                This ticket was filed because the AI/network call itself failed, not because
+                nothing matched confidently. Check whether it was a one-off (ask the client to
+                retry) or a systemic outage before treating it as template-building work.
+              </Alert>
+            )}
             <Stack direction="row" spacing={4} flexWrap="wrap" gap={2}>
               <Box>
                 <Typography variant="caption" color="text.secondary">Requested By</Typography>
