@@ -79,7 +79,10 @@ export interface GeneratedReport {
   closestTemplateId?: string | null;
   closestTemplateName?: string | null;
   blendProvenance?: ProvenanceEntry[] | null;
-  blendedDatasetDownloadUrl?: string | null;
+  /** Base64-encoded .xlsx bytes — the blended file is never persisted server-side (only its
+   * schema is logged), so it's returned inline here and decoded straight into a Blob for a
+   * same-origin, no-network-hop download (see downloadBlendedDataset). */
+  blendedDatasetFileBase64?: string | null;
   blendNote?: string | null;
 }
 
@@ -299,16 +302,20 @@ export async function verifyHtmlTemplateMatch(file: File): Promise<HtmlTemplateC
 }
 
 // ── Closest-template blend fallback (AI-assisted mode only) ─────────────────────
-// blendedDatasetDownloadUrl is a short-lived Azure Blob SAS URL, not a koru-main API path — fetch
-// it directly (no auth header, no apiAxiosInstance base URL) rather than routing through the API.
+// The blended file is never persisted server-side (only its schema is logged) — its bytes ride
+// along inline in the generate response as base64, so this decodes straight into a Blob and
+// triggers a download with zero network hop. No fetch(), so no cross-origin/CORS surface at all.
 
-/** Triggers a browser download of the proposed/blended dataset from its SAS URL, using the same
- * createObjectURL/<a download>/revokeObjectURL sequence already used elsewhere in this app
- * (see blueprintApi.ts's downloadBlueprintPdf, templateService.ts's downloadTemplate). */
-export async function downloadBlendedDataset(url: string, closestTemplateId: string): Promise<void> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('Failed to download the proposed dataset.');
-  const blob = await res.blob();
+/** Triggers a browser download of the proposed/blended dataset from its inline base64 payload,
+ * using the same createObjectURL/<a download>/revokeObjectURL sequence already used elsewhere in
+ * this app (see blueprintApi.ts's downloadBlueprintPdf, templateService.ts's downloadTemplate). */
+export function downloadBlendedDataset(base64: string, closestTemplateId: string): void {
+  const byteChars = atob(base64);
+  const byteNumbers = new Array<number>(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+  const blob = new Blob([new Uint8Array(byteNumbers)], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
   const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = objectUrl;

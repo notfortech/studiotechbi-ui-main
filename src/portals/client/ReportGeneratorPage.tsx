@@ -1127,7 +1127,6 @@ function ReportResultsStep({
   const [savedReportId, setSavedReportId] = useState<string | null>(null);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [exportPdfError, setExportPdfError] = useState<string | null>(null);
-  const [downloadingBlend, setDownloadingBlend] = useState(false);
   const [downloadBlendError, setDownloadBlendError] = useState<string | null>(null);
   const [selectedPaletteIndex, setSelectedPaletteIndex] = useState<number | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -1293,16 +1292,13 @@ function ReportResultsStep({
   // Manual re-trigger for the closest-template blend fallback's proposed dataset -- the automatic
   // download already fires once from handleGenerateReport; this covers a blocked popup/download or
   // the client wanting the file again later in the same session.
-  const handleDownloadBlendedDataset = async () => {
-    if (!report.blendedDatasetDownloadUrl || !report.closestTemplateId) return;
-    setDownloadingBlend(true);
+  const handleDownloadBlendedDataset = () => {
+    if (!report.blendedDatasetFileBase64 || !report.closestTemplateId) return;
     setDownloadBlendError(null);
     try {
-      await downloadBlendedDataset(report.blendedDatasetDownloadUrl, report.closestTemplateId);
+      downloadBlendedDataset(report.blendedDatasetFileBase64, report.closestTemplateId);
     } catch (err) {
       setDownloadBlendError(err instanceof Error ? err.message : "Failed to download the proposed dataset.");
-    } finally {
-      setDownloadingBlend(false);
     }
   };
 
@@ -1398,7 +1394,7 @@ function ReportResultsStep({
             {report.blendNote ??
               "No confident interactive template match yet for this data shape — showing the standard metrics view below instead. Our team has been notified so we can add coverage."}
           </Alert>
-          {report.blendedDatasetDownloadUrl && report.blendProvenance && report.blendProvenance.some((p) => p.source === "mocked") && (
+          {report.blendedDatasetFileBase64 && report.blendProvenance && report.blendProvenance.some((p) => p.source === "mocked") && (
             <Typography variant="body2" color="text.secondary">
               Proposed additional columns:{" "}
               {Array.from(
@@ -1416,15 +1412,14 @@ function ReportResultsStep({
             >
               {exportingPdf ? "Exporting…" : "Export PDF"}
             </Button>
-            {report.blendedDatasetDownloadUrl && (
+            {report.blendedDatasetFileBase64 && (
               <Button
                 size="small"
                 variant="outlined"
-                startIcon={downloadingBlend ? <CircularProgress size={16} color="inherit" /> : <DownloadDatasetIcon />}
-                disabled={downloadingBlend}
-                onClick={() => void handleDownloadBlendedDataset()}
+                startIcon={<DownloadDatasetIcon />}
+                onClick={handleDownloadBlendedDataset}
               >
-                {downloadingBlend ? "Downloading…" : "Download Proposed Dataset"}
+                Download Proposed Dataset
               </Button>
             )}
             <Button
@@ -1953,8 +1948,12 @@ export function ReportGeneratorPage() {
       // block lives only in handleGenerateReport, not refetchWithFilters). Best-effort: a blocked
       // download (popup blocker etc.) must never surface as a report-generation failure -- the
       // "Download Proposed Dataset" button in the banner below covers that case.
-      if (result.blendedDatasetDownloadUrl && result.closestTemplateId) {
-        void downloadBlendedDataset(result.blendedDatasetDownloadUrl, result.closestTemplateId).catch(() => {});
+      if (result.blendedDatasetFileBase64 && result.closestTemplateId) {
+        try {
+          downloadBlendedDataset(result.blendedDatasetFileBase64, result.closestTemplateId);
+        } catch {
+          // Best-effort -- see comment above.
+        }
       }
 
       // Strict mode never runs the AI-assisted verify-match check, so this deterministic call is
