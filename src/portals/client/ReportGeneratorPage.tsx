@@ -427,8 +427,8 @@ function SchemaModelMatchPanel({
       {customReportError && <Alert severity="error">{customReportError}</Alert>}
       {customReportFiled && (
         <Alert severity="success">
-          Request filed, with your data's schema attached — our team will build a template from it
-          and it will appear in Saved Reports once ready.
+          Request filed, with your data's schema attached — our support team will review it and
+          reach out once your custom report is ready.
         </Alert>
       )}
     </Stack>
