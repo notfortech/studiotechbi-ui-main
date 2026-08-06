@@ -95,7 +95,7 @@ import {
   type ReportMatchResult,
   type AiProvider,
 } from "../../api/reportDesignerApi";
-import { requestCustomPowerBiReport } from "../../api/reportRequestsApi";
+import { requestCustomPowerBiReport, type CustomReportRequestReason } from "../../api/reportRequestsApi";
 import {
   generateReport,
   getReportAiSummary,
@@ -383,7 +383,7 @@ const SCHEMA_MODEL_MATCH_CONFIDENCE_THRESHOLD = 0.85;
 
 function SchemaModelMatchPanel({
   matching, matchError, matchResult, dataConsentRecordedAt, dataConsentDeciding, dataConsentError, onOpenConsent,
-  requestingCustomReport, customReportError, customReportFiled, onRequestCustomReport,
+  requestingCustomReport, customReportError, customReportFiled, filedRequestId, onRequestCustomReport,
 }: {
   matching: boolean;
   matchError: string | null;
@@ -395,6 +395,7 @@ function SchemaModelMatchPanel({
   requestingCustomReport: boolean;
   customReportError: string | null;
   customReportFiled: boolean;
+  filedRequestId: string | null;
   onRequestCustomReport: () => void;
 }) {
   // "AiProposedNew" means nothing in the library fit, so the AI drafted a brand-new model on the
@@ -427,8 +428,9 @@ function SchemaModelMatchPanel({
       {customReportError && <Alert severity="error">{customReportError}</Alert>}
       {customReportFiled && (
         <Alert severity="success">
-          Request filed, with your data's schema attached — our support team will review it and
-          reach out once your custom report is ready.
+          Request {filedRequestId && `#${filedRequestId.slice(0, 8)} `}filed, with your data's
+          schema attached — our support team will review it and reach out once your custom report
+          is ready.
         </Alert>
       )}
     </Stack>
@@ -543,7 +545,7 @@ function DataModelStep({
   extractedSchema, modelResult, generating, generateError, aiDeclined,
   matching, matchError, matchResult, dataConsentRecordedAt, dataConsentDeciding, dataConsentError, onOpenDataConsent,
   onCancelGeneration,
-  requestingCustomReport, customReportError, customReportFiled, onRequestCustomReport,
+  requestingCustomReport, customReportError, customReportFiled, filedRequestId, onRequestCustomReport,
 }: {
   extractedSchema: ExtractedSchemaDto;
   modelResult: GenerateReportModelResponse | null;
@@ -561,6 +563,7 @@ function DataModelStep({
   requestingCustomReport: boolean;
   customReportError: string | null;
   customReportFiled: boolean;
+  filedRequestId: string | null;
   onRequestCustomReport: () => void;
 }) {
   const { elapsedSeconds, pct } = useTimedProgress(generating);
@@ -640,6 +643,7 @@ function DataModelStep({
           requestingCustomReport={requestingCustomReport}
           customReportError={customReportError}
           customReportFiled={customReportFiled}
+          filedRequestId={filedRequestId}
           onRequestCustomReport={onRequestCustomReport}
         />
       )}
@@ -1101,7 +1105,7 @@ function FilterBar({
 function ReportResultsStep({
   report, theme, onFilterChange, onClearFilters, refreshing, sourceFileName,
   showValidateReport, validating, validateError, onValidateReport,
-  requestingCustomReport, customReportError, customReportFiled, onRequestCustomReport,
+  requestingCustomReport, customReportError, customReportFiled, filedRequestId, onRequestCustomReport,
 }: {
   report: GeneratedReport;
   theme: VisualTheme;
@@ -1116,6 +1120,7 @@ function ReportResultsStep({
   requestingCustomReport: boolean;
   customReportError: string | null;
   customReportFiled: boolean;
+  filedRequestId: string | null;
   onRequestCustomReport: () => void;
 }) {
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
@@ -1440,6 +1445,13 @@ function ReportResultsStep({
           {exportPdfError && <Alert severity="error">{exportPdfError}</Alert>}
           {downloadBlendError && <Alert severity="error">{downloadBlendError}</Alert>}
           {customReportError && <Alert severity="error">{customReportError}</Alert>}
+          {customReportFiled && (
+            <Alert severity="success">
+              Request {filedRequestId && `#${filedRequestId.slice(0, 8)} `}filed, with your data's
+              schema attached — our support team will review it and reach out once your custom
+              report is ready.
+            </Alert>
+          )}
         </Stack>
       )}
 
@@ -1653,6 +1665,7 @@ export function ReportGeneratorPage() {
   const [requestingCustomReport, setRequestingCustomReport] = useState(false);
   const [customReportError, setCustomReportError] = useState<string | null>(null);
   const [customReportFiled, setCustomReportFiled] = useState(false);
+  const [filedRequestId, setFiledRequestId] = useState<string | null>(null);
 
   const [selectedTheme, setSelectedTheme] = useState<number | null>(null);
 
@@ -1775,7 +1788,11 @@ export function ReportGeneratorPage() {
       );
       setModelResult(model);
     } catch (err) {
-      setModelError(err instanceof Error ? err.message : "Model generation failed.");
+      // The one call in this wizard that actually costs an AI credit -- but koru-main only debits
+      // the ledger after a confirmed success (see GenerateReportModelAsync's try/catch), so a
+      // thrown error here is guaranteed to mean nothing was charged. Safe to state unconditionally.
+      const message = err instanceof Error ? err.message : "Model generation failed.";
+      setModelError(`${message} This didn't use any of your AI credits.`);
     } finally {
       setModelGenerating(false);
       modelAbortRef.current = null;
@@ -1810,7 +1827,17 @@ export function ReportGeneratorPage() {
         );
       }
     } catch (err) {
-      setMatchError(err instanceof Error ? err.message : "Failed to match against the model library.");
+      // This call never consumes AI credits (see runModelGeneration for the one call that does),
+      // so the reassurance here is unconditionally accurate. File a ticket distinct from the
+      // "searched and found nothing confident" case above -- this is "the call itself failed,"
+      // which needs a different staff response (retry / check for an outage).
+      void autoFileCustomReportRequest(
+        extractedSchema,
+        "Auto-filed: the model-library match request failed (network or AI service error).",
+        "GenerationError"
+      );
+      const message = err instanceof Error ? err.message : "Failed to match against the model library.";
+      setMatchError(`${message} This didn't use any of your AI credits.`);
     } finally {
       setMatching(false);
       matchAbortRef.current = null;
@@ -1828,11 +1855,16 @@ export function ReportGeneratorPage() {
   // below, and the deterministic generate call in handleGenerateReport) so an admin always ends up
   // with a schema-carrying, admin-visible record. Guarded on customReportFiled by every caller so
   // re-running a check doesn't double-file.
-  async function autoFileCustomReportRequest(schema: ExtractedSchemaDto, note?: string) {
+  async function autoFileCustomReportRequest(
+    schema: ExtractedSchemaDto,
+    note?: string,
+    reason?: CustomReportRequestReason
+  ) {
     if (customReportFiled) return;
     setRequestingCustomReport(true);
     try {
-      await requestCustomPowerBiReport(schema, note);
+      const { requestId } = await requestCustomPowerBiReport(schema, note, reason);
+      setFiledRequestId(requestId);
       setCustomReportFiled(true);
     } catch (err) {
       setCustomReportError(err instanceof Error ? err.message : "Failed to file the custom report request.");
@@ -1858,7 +1890,18 @@ export function ReportGeneratorPage() {
         );
       }
     } catch (err) {
-      setHtmlMatchError(err instanceof Error ? err.message : "Failed to verify template match.");
+      // Distinct from the "checked and found nothing confident" case above -- the call itself
+      // failed, which needs a different staff response (retry / check for an outage). This call
+      // never consumes AI credits, so the reassurance here is unconditionally accurate.
+      if (extractedSchema) {
+        void autoFileCustomReportRequest(
+          extractedSchema,
+          "Auto-filed: the template match check failed (network or AI service error).",
+          "GenerationError"
+        );
+      }
+      const message = err instanceof Error ? err.message : "Failed to verify template match.";
+      setHtmlMatchError(`${message} This didn't use any of your AI credits.`);
     } finally {
       setVerifyingHtmlMatch(false);
       htmlMatchAbortRef.current = null;
@@ -1980,7 +2023,32 @@ export function ReportGeneratorPage() {
         }
       }
     } catch (err) {
-      setReportError(err instanceof Error ? err.message : "Failed to generate report.");
+      // The call itself failed (network error, ReportAgent.Api unreachable, etc.) rather than
+      // completing with a low-confidence result -- there's no partial report to fall back to here,
+      // so this is an honest error state, not a disguised degraded one. File a ticket (best-effort,
+      // schema extracted fresh if needed) so the client has something concrete to reference instead
+      // of a dead end, and reassure them this never touches AI credits regardless of mode -- the
+      // "Generate Report" button above stays enabled, so re-clicking it is the retry.
+      let schema = extractedSchema;
+      if (!schema) {
+        try {
+          schema = await extractSchemaFromExcel(uploadedFile);
+          setExtractedSchema(schema);
+        } catch {
+          // Best-effort -- a failed schema extraction here must not block surfacing the real error.
+        }
+      }
+      if (schema) {
+        void autoFileCustomReportRequest(
+          schema,
+          "Auto-filed: report generation failed (network or service error).",
+          "GenerationError"
+        );
+      }
+      const message = err instanceof Error ? err.message : "Failed to generate report.";
+      setReportError(
+        `${message} This didn't use any of your AI credits — click "Generate Report" to try again.`
+      );
     } finally {
       setReportGenerating(false);
     }
@@ -2143,6 +2211,7 @@ export function ReportGeneratorPage() {
             requestingCustomReport={requestingCustomReport}
             customReportError={customReportError}
             customReportFiled={customReportFiled}
+            filedRequestId={filedRequestId}
             onRequestCustomReport={handleRequestCustomReport}
           />
         )}
@@ -2220,6 +2289,7 @@ export function ReportGeneratorPage() {
             requestingCustomReport={requestingCustomReport}
             customReportError={customReportError}
             customReportFiled={customReportFiled}
+            filedRequestId={filedRequestId}
             onRequestCustomReport={handleRequestCustomReport}
           />
         )}

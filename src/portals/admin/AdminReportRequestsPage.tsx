@@ -18,6 +18,7 @@ import {
   listReportRequests,
   type CustomReportRequestSummary,
   type CustomReportRequestStatus,
+  type CustomReportRequestReason,
 } from '../../api/adminReportRequestsApi';
 import { ROUTES } from '../../core/constants';
 
@@ -36,6 +37,13 @@ const statusFor = (status: CustomReportRequestStatus): StatusDisplay => {
       return { label: 'Pending', color: 'default' };
   }
 };
+
+// GenerationError means the AI/network call itself failed -- worth a retry or an outage check,
+// not necessarily template-building work like the normal NoConfidentMatch case.
+const reasonFor = (reason: CustomReportRequestReason): StatusDisplay =>
+  reason === 'GenerationError'
+    ? { label: 'AI/Network Error', color: 'error' }
+    : { label: 'No Confident Match', color: 'default' };
 
 const formatDate = (d?: string | null) => (d ? new Date(d).toLocaleString() : '—');
 
@@ -92,6 +100,7 @@ export const AdminReportRequestsPage = () => {
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ width: 130 }}>Status</TableCell>
+                  <TableCell sx={{ width: 160 }}>Reason</TableCell>
                   <TableCell>Requested By</TableCell>
                   <TableCell>Source File</TableCell>
                   <TableCell sx={{ width: 200 }}>Requested</TableCell>
@@ -102,13 +111,14 @@ export const AdminReportRequestsPage = () => {
               <TableBody>
                 {requests.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} align="center" sx={{ py: 6 }} color="text.secondary">
+                    <TableCell colSpan={7} align="center" sx={{ py: 6 }} color="text.secondary">
                       No custom report requests yet.
                     </TableCell>
                   </TableRow>
                 ) : (
                   requests.map((r) => {
                     const status = statusFor(r.status);
+                    const reason = reasonFor(r.requestReason);
                     return (
                       <TableRow
                         key={r.requestId}
@@ -118,6 +128,14 @@ export const AdminReportRequestsPage = () => {
                       >
                         <TableCell>
                           <Chip label={status.label} size="small" color={status.color === 'default' ? undefined : status.color} />
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={reason.label}
+                            size="small"
+                            variant="outlined"
+                            color={reason.color === 'default' ? undefined : reason.color}
+                          />
                         </TableCell>
                         <TableCell>{r.requestedByEmail ?? '—'}</TableCell>
                         <TableCell>{r.sourceFileName ?? '—'}</TableCell>

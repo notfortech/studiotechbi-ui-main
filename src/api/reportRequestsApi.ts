@@ -26,16 +26,22 @@ function apiError(err: unknown, fallback: string): Error {
 
 // ── API calls ─────────────────────────────────────────────────────────────────
 
+/** Distinguishes why a ticket was filed — "we searched and found nothing confident" vs. "the
+ * AI/network call itself failed" — mirrors koru-main's CustomReportRequestReasons. Omitted
+ * defaults to NoConfidentMatch server-side. */
+export type CustomReportRequestReason = 'NoConfidentMatch' | 'GenerationError';
+
 /** Files a "request a custom Power BI report" ticket — sends the already-extracted schema
  * (no re-upload of the source file) so an analyst can see what they're building against. */
 export async function requestCustomPowerBiReport(
   schema: ExtractedSchemaDto,
-  notes?: string
+  notes?: string,
+  reason?: CustomReportRequestReason
 ): Promise<{ requestId: string }> {
   try {
     const res = await apiAxiosInstance.post<ApiResponse<{ requestId: string }>>(
       '/report-requests',
-      { schema, notes }
+      { schema, notes, reason }
     );
     return extractData(res.data);
   } catch (err) {

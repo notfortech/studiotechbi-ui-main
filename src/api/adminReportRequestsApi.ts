@@ -7,9 +7,15 @@ import type { ExtractedSchemaDto } from './reportDesignerApi';
 
 export type CustomReportRequestStatus = 'Pending' | 'InProgress' | 'Fulfilled' | 'Declined';
 
+/** Why this ticket exists — NoConfidentMatch is the normal "searched and found nothing confident"
+ * case; GenerationError means the AI/network call itself failed, which needs a different staff
+ * response (retry / check for an outage) rather than template-building work. */
+export type CustomReportRequestReason = 'NoConfidentMatch' | 'GenerationError';
+
 export interface CustomReportRequestSummary {
   requestId: string;
   status: CustomReportRequestStatus;
+  requestReason: CustomReportRequestReason;
   requestedByEmail?: string | null;
   sourceFileName?: string | null;
   createdAt: string;
@@ -21,6 +27,7 @@ export interface CustomReportRequestDetail {
   requestId: string;
   clientId: string;
   status: CustomReportRequestStatus;
+  requestReason: CustomReportRequestReason;
   requestedByEmail?: string | null;
   notes?: string | null;
   schema?: ExtractedSchemaDto | null;
