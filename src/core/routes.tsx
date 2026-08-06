@@ -13,6 +13,7 @@ import { UsersPage } from '../portals/admin/UsersPage';
 import { ClientsPage } from '../portals/admin/ClientsPage';
 import { ClientDetailsPage } from '../portals/admin/ClientDetailsPage';
 import { TemplatesPage } from '../portals/admin/TemplatesPage';
+import { HtmlTemplatesPage } from '../portals/admin/HtmlTemplatesPage';
 import { PowerBIAssetsPage } from '../portals/admin/PowerBIAssetsPage';
 import { PipelineMonitoringPage } from '../portals/admin/PipelineMonitoringPage';
 import { FileUploadMonitoringPage } from '../portals/admin/FileUploadMonitoringPage';
@@ -98,6 +99,10 @@ export const routes: RouteObject[] = [
       {
         path: 'templates',
         element: <TemplatesPage />,
+      },
+      {
+        path: 'html-templates',
+        element: <HtmlTemplatesPage />,
       },
       {
         path: 'powerbi-assets',
