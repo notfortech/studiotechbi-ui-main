@@ -26,6 +26,7 @@ export const ROUTES = {
     CLIENTS: '/admin/clients',
     CLIENT_DETAILS: '/admin/clients/:clientId',
     TEMPLATES: '/admin/templates',
+    HTML_TEMPLATES: '/admin/html-templates',
     POWERBI_ASSETS: '/admin/powerbi-assets',
     PIPELINE_MONITORING: '/admin/pipeline',
     FILE_UPLOAD_MONITORING: '/admin/file-uploads',
