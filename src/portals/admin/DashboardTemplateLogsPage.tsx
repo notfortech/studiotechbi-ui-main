@@ -40,7 +40,7 @@ export const DashboardTemplateLogsPage = () => {
 
   const formatDate = (d?: string) => (d ? new Date(d).toLocaleString() : '—');
 
-  type StatusDisplay = { label: string; color: 'success' | 'error' | 'warning' };
+  type StatusDisplay = { label: string; color: 'success' | 'error' | 'warning' | 'info' };
 
   const statusFor = (eventType?: string): StatusDisplay => {
     switch (eventType) {
@@ -52,6 +52,8 @@ export const DashboardTemplateLogsPage = () => {
         return { label: 'Error', color: 'error' };
       case 'HtmlTemplateBuildRequested':
         return { label: 'Needs HTML Template', color: 'warning' };
+      case 'HtmlTemplateClosestMatchBlended':
+        return { label: 'Closest Match Blended (Awaiting Real Data)', color: 'info' };
       case 'DashboardTemplateGenerated':
       default:
         return { label: 'Success', color: 'success' };
