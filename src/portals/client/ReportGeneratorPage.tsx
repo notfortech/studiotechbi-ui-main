@@ -373,8 +373,15 @@ function StarSchemaDiagram({ starSchema, tables }: { starSchema: StarSchema; tab
 
 // ── Schema/model/template library match (Story 3) ────────────────────────────
 
+// Below this, a library match isn't confident enough to hand straight to the client -- treated
+// the same as no match at all (custom Power BI request path). Matches the 0.85 threshold already
+// used elsewhere in this wizard (HtmlMatchConfidenceThreshold) for the same "protect report
+// accuracy" reason.
+const SCHEMA_MODEL_MATCH_CONFIDENCE_THRESHOLD = 0.85;
+
 function SchemaModelMatchPanel({
   matching, matchError, matchResult, dataConsentRecordedAt, dataConsentDeciding, dataConsentError, onOpenConsent,
+  requestingCustomReport, customReportError, customReportFiled, onRequestCustomReport,
 }: {
   matching: boolean;
   matchError: string | null;
@@ -383,13 +390,54 @@ function SchemaModelMatchPanel({
   dataConsentDeciding: boolean;
   dataConsentError: string | null;
   onOpenConsent: () => void;
+  requestingCustomReport: boolean;
+  customReportError: string | null;
+  customReportFiled: boolean;
+  onRequestCustomReport: () => void;
 }) {
+  // "AiProposedNew" means nothing in the library fit, so the AI drafted a brand-new model on the
+  // spot -- exactly the repeated-AI-credit-spend case we want to avoid. Treated as "no confident
+  // match" here rather than presented as ready to use: the client gets the custom-report path,
+  // and (via the request they file) a schema an admin can build a real template from once,
+  // instead of the AI re-authoring a one-off model for every similar dataset that comes through.
+  const isConfidentLibraryMatch =
+    !!matchResult?.schemaModelId
+    && !matchResult.pendingSupportReview
+    && matchResult.matchSource !== "AiProposedNew"
+    && matchResult.confidence >= SCHEMA_MODEL_MATCH_CONFIDENCE_THRESHOLD;
+
+  const customReportAction = (
+    <Stack spacing={1} sx={{ mt: 2 }}>
+      <Button
+        variant="outlined"
+        color="secondary"
+        startIcon={requestingCustomReport ? <CircularProgress size={16} color="inherit" /> : <CustomReportIcon />}
+        disabled={requestingCustomReport || customReportFiled}
+        onClick={onRequestCustomReport}
+        sx={{ alignSelf: "flex-start" }}
+      >
+        {customReportFiled
+          ? "Custom report requested"
+          : requestingCustomReport
+          ? "Filing request…"
+          : "Request a custom Power BI report"}
+      </Button>
+      {customReportError && <Alert severity="error">{customReportError}</Alert>}
+      {customReportFiled && (
+        <Alert severity="success">
+          Request filed, with your data's schema attached — our team will build a template from it
+          and it will appear in Saved Reports once ready.
+        </Alert>
+      )}
+    </Stack>
+  );
+
   return (
     <Box sx={{ mt: 4, pt: 3, borderTop: 1, borderColor: "divider" }}>
       <Typography variant="h6" fontWeight={700} gutterBottom>Matched Report Model</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Separately, your schema is checked against our library of pre-built industry report models —
-        the model and dashboard template your report can eventually be published against.
+        Your schema is checked against our library of pre-built industry report models — the model
+        and dashboard template your report can eventually be published against.
       </Typography>
 
       {matchError && <Alert severity="error" sx={{ mb: 2 }}>{matchError}</Alert>}
@@ -400,31 +448,22 @@ function SchemaModelMatchPanel({
           <Typography variant="body2" color="text.secondary">Matching against the model library…</Typography>
         </Stack>
       ) : matchResult?.pendingSupportReview ? (
-        <Alert severity="info">
-          No confident match in the library — the AI proposed a new model, <strong>{matchResult.schemaModelName}</strong>,
-          now pending internal review before it can be used. Check back once it's approved.
-        </Alert>
-      ) : matchResult?.schemaModelId ? (
         <Box>
-          {matchResult.matchSource === "AiProposedNew" && (
-            <Alert severity="info" sx={{ mb: 2 }}>
-              Nothing in the library was a good fit, so the AI proposed a new model and dashboard
-              template below — added to the library immediately, no review step.
-            </Alert>
-          )}
+          <Alert severity="info" sx={{ mb: 1 }}>
+            No confident match in the library — your data's schema has been logged for our team to
+            build a template from, so this same shape won't need AI again next time.
+          </Alert>
+          {customReportAction}
+        </Box>
+      ) : isConfidentLibraryMatch && matchResult ? (
+        <Box>
           <Stack direction="row" spacing={1} flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
             <Chip label={matchResult.industry || "Cross-Industry"} size="small" color="primary" />
             <Chip
-              label={
-                matchResult.matchSource === "AiProposedNew" ? "AI-proposed (new)"
-                  : matchResult.matchSource === "AiMatched" ? "AI-matched"
-                  : "Matched"
-              }
+              label={matchResult.matchSource === "AiMatched" ? "AI-matched" : "Matched"}
               size="small" variant="outlined"
             />
-            {matchResult.matchSource !== "AiProposedNew" && (
-              <Chip label={`Confidence ${Math.round(matchResult.confidence * 100)}%`} size="small" variant="outlined" />
-            )}
+            <Chip label={`Confidence ${Math.round(matchResult.confidence * 100)}%`} size="small" variant="outlined" />
           </Stack>
 
           <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
@@ -486,7 +525,13 @@ function SchemaModelMatchPanel({
           )}
         </Box>
       ) : !matchError ? (
-        <Alert severity="warning">No confident match found in the model library.</Alert>
+        <Box>
+          <Alert severity="warning" sx={{ mb: 1 }}>
+            No confident match found in the model library
+            {matchResult ? ` (best match was ${Math.round(matchResult.confidence * 100)}% — below our ${Math.round(SCHEMA_MODEL_MATCH_CONFIDENCE_THRESHOLD * 100)}% bar for report accuracy)` : ""}.
+          </Alert>
+          {customReportAction}
+        </Box>
       ) : null}
     </Box>
   );
@@ -496,8 +541,6 @@ function DataModelStep({
   extractedSchema, modelResult, generating, generateError, aiDeclined,
   matching, matchError, matchResult, dataConsentRecordedAt, dataConsentDeciding, dataConsentError, onOpenDataConsent,
   onCancelGeneration,
-  verifyingHtmlMatch, htmlMatchError, htmlMatchCandidates, selectedHtmlTemplateId,
-  onVerifyHtmlMatch, onSelectHtmlTemplate,
   requestingCustomReport, customReportError, customReportFiled, onRequestCustomReport,
 }: {
   extractedSchema: ExtractedSchemaDto;
@@ -513,12 +556,6 @@ function DataModelStep({
   dataConsentError: string | null;
   onOpenDataConsent: () => void;
   onCancelGeneration: () => void;
-  verifyingHtmlMatch: boolean;
-  htmlMatchError: string | null;
-  htmlMatchCandidates: HtmlTemplateCandidate[] | null;
-  selectedHtmlTemplateId: string | null;
-  onVerifyHtmlMatch: () => void;
-  onSelectHtmlTemplate: (templateId: string) => void;
   requestingCustomReport: boolean;
   customReportError: string | null;
   customReportFiled: boolean;
@@ -586,73 +623,6 @@ function DataModelStep({
           <Alert severity="info" sx={{ mt: 2 }}>
             Model generated in {modelResult.durationMs.toLocaleString()} ms.
           </Alert>
-
-          {Boolean(modelResult.blueprint) && (
-            <Box sx={{ mt: 2 }}>
-              <Stack spacing={1}>
-                {htmlMatchError && <Alert severity="error">{htmlMatchError}</Alert>}
-                {htmlMatchCandidates && (
-                  <Alert severity={htmlMatchCandidates.length > 0 ? "success" : "info"}>
-                    {htmlMatchCandidates.length > 0
-                      ? "We found a report template that fits your data:"
-                      : "No confident template match yet — a fallback report layout will be used. Our team has been notified so we can add coverage for your data shape."}
-                    {htmlMatchCandidates.length > 0 && (
-                      <Stack direction="row" spacing={0.75} flexWrap="wrap" gap={0.75} sx={{ mt: 1 }}>
-                        {htmlMatchCandidates.map((c) => (
-                          <Chip
-                            key={c.templateId}
-                            size="small"
-                            clickable
-                            variant={c.templateId === selectedHtmlTemplateId ? "filled" : "outlined"}
-                            color={c.templateId === selectedHtmlTemplateId ? "success" : "default"}
-                            label={`${c.templateName} (${Math.round(c.confidence * 100)}%)`}
-                            onClick={() => onSelectHtmlTemplate(c.templateId)}
-                          />
-                        ))}
-                      </Stack>
-                    )}
-                  </Alert>
-                )}
-                <Stack direction="row" spacing={1.5} flexWrap="wrap" gap={1.5}>
-                  <Button
-                    variant="outlined"
-                    startIcon={verifyingHtmlMatch ? <CircularProgress size={16} color="inherit" /> : <VerifyMatchIcon />}
-                    disabled={verifyingHtmlMatch}
-                    onClick={onVerifyHtmlMatch}
-                    sx={{ alignSelf: "flex-start" }}
-                  >
-                    {verifyingHtmlMatch ? "Checking for a template match…" : "Verify Template Match"}
-                  </Button>
-                  <Button
-                    variant="text"
-                    color="secondary"
-                    startIcon={requestingCustomReport ? <CircularProgress size={16} color="inherit" /> : <CustomReportIcon />}
-                    disabled={requestingCustomReport || customReportFiled}
-                    onClick={onRequestCustomReport}
-                    sx={{ alignSelf: "flex-start" }}
-                  >
-                    {customReportFiled
-                      ? "Custom report requested"
-                      : requestingCustomReport
-                      ? "Filing request…"
-                      : "Request a custom Power BI report"}
-                  </Button>
-                </Stack>
-                {customReportError && <Alert severity="error">{customReportError}</Alert>}
-                {customReportFiled && (
-                  <Alert severity="success">
-                    Request filed — our analyst team will build a custom Power BI report for your
-                    data and it will appear in Saved Reports once ready.
-                  </Alert>
-                )}
-                <Typography variant="caption" color="text.secondary">
-                  Your report will render using our closest-matching interactive template, or a
-                  fallback layout if nothing matches yet. Not what you need? Request a custom
-                  Power BI report and our team will build one for you.
-                </Typography>
-              </Stack>
-            </Box>
-          )}
         </Box>
       ) : null}
 
@@ -665,6 +635,10 @@ function DataModelStep({
           dataConsentDeciding={dataConsentDeciding}
           dataConsentError={dataConsentError}
           onOpenConsent={onOpenDataConsent}
+          requestingCustomReport={requestingCustomReport}
+          customReportError={customReportError}
+          customReportFiled={customReportFiled}
+          onRequestCustomReport={onRequestCustomReport}
         />
       )}
     </Box>
@@ -1741,6 +1715,24 @@ export function ReportGeneratorPage() {
     try {
       const match = await matchSchemaModel(clientId, extractedSchema, controller.signal);
       setMatchResult(match);
+
+      // Auto-file the custom-report request the moment we know the library match isn't
+      // confident enough to hand to the client -- mirrors the deterministic path's own
+      // no-match auto-file (handleGenerateReport), so the schema is logged for admin/support to
+      // build a real template from without the client having to remember to click a button. The
+      // manual "Request a custom Power BI report" button (SchemaModelMatchPanel) stays as a
+      // no-op-if-already-filed backstop, guarded by the same customReportFiled flag.
+      const confident =
+        !!match.schemaModelId
+        && !match.pendingSupportReview
+        && match.matchSource !== "AiProposedNew"
+        && match.confidence >= SCHEMA_MODEL_MATCH_CONFIDENCE_THRESHOLD;
+      if (!confident) {
+        void autoFileCustomReportRequest(
+          extractedSchema,
+          "Auto-filed: no confident schema-model library match found (AI-assisted Report Generator)."
+        );
+      }
     } catch (err) {
       setMatchError(err instanceof Error ? err.message : "Failed to match against the model library.");
     } finally {
@@ -2059,12 +2051,6 @@ export function ReportGeneratorPage() {
             dataConsentError={dataConsentError}
             onOpenDataConsent={handleOpenDataConsent}
             onCancelGeneration={handleCancelAiAnalysis}
-            verifyingHtmlMatch={verifyingHtmlMatch}
-            htmlMatchError={htmlMatchError}
-            htmlMatchCandidates={htmlMatchCandidates}
-            selectedHtmlTemplateId={selectedHtmlTemplateId}
-            onVerifyHtmlMatch={handleVerifyHtmlMatch}
-            onSelectHtmlTemplate={handleSelectHtmlTemplate}
             requestingCustomReport={requestingCustomReport}
             customReportError={customReportError}
             customReportFiled={customReportFiled}
