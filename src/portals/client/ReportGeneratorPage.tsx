@@ -15,6 +15,7 @@ import {
   Alert,
   CircularProgress,
   LinearProgress,
+  Collapse,
   FormControl,
   InputLabel,
   Select,
@@ -51,6 +52,7 @@ import {
   SupportAgent as CustomReportIcon,
   PictureAsPdf as PdfExportIcon,
   FileDownloadOutlined as DownloadDatasetIcon,
+  ExpandMore as ExpandMoreIcon,
 } from "@mui/icons-material";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -376,6 +378,137 @@ function StarSchemaDiagram({ starSchema, tables }: { starSchema: StarSchema; tab
   );
 }
 
+// ── Unified AI-assisted template candidates — real HTML template matches plus the AI-proposed
+// structure as a single list, so a client sees "here's what's close" and "here's our AI's read
+// on your data" together instead of as two disconnected panels. The AI-proposed row is purely
+// informational (its expandable detail reuses StarSchemaDiagram) and routes to the existing
+// custom-Power-BI-report request — it never attempts to render a report on its own. ──────────
+
+function TemplateCandidatesPanel({
+  verifyingHtmlMatch, htmlMatchError, htmlMatchCandidates, selectedHtmlTemplateId, onSelectHtmlTemplate,
+  starSchema, tables,
+  requestingCustomReport, customReportError, customReportFiled, customReportRequestId, onRequestCustomReport,
+}: {
+  verifyingHtmlMatch: boolean;
+  htmlMatchError: string | null;
+  htmlMatchCandidates: HtmlTemplateCandidate[] | null;
+  selectedHtmlTemplateId: string | null;
+  onSelectHtmlTemplate: (templateId: string) => void;
+  starSchema: StarSchema | null;
+  tables: TableInfo[];
+  requestingCustomReport: boolean;
+  customReportError: string | null;
+  customReportFiled: boolean;
+  customReportRequestId: string | null;
+  onRequestCustomReport: () => void;
+}) {
+  const [aiRowExpanded, setAiRowExpanded] = useState(false);
+
+  return (
+    <Box>
+      <Typography variant="h6" fontWeight={700} gutterBottom>Report Template Match</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Your data is checked against our library of interactive report templates.
+      </Typography>
+
+      {htmlMatchError && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          We hit a technical issue checking for a template match ({htmlMatchError}) — this didn't
+          use any of your AI credits. You can still request a custom Power BI report below.
+        </Alert>
+      )}
+
+      {verifyingHtmlMatch ? (
+        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ py: 2 }}>
+          <CircularProgress size={20} />
+          <Typography variant="body2" color="text.secondary">Checking for a template match…</Typography>
+        </Stack>
+      ) : (
+        <Stack spacing={1.5}>
+          {htmlMatchCandidates?.map((c) => (
+            <Card
+              key={c.templateId}
+              variant="outlined"
+              sx={{ borderColor: c.templateId === selectedHtmlTemplateId ? "success.main" : "divider" }}
+            >
+              <CardActionArea onClick={() => onSelectHtmlTemplate(c.templateId)}>
+                <CardContent sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                  {c.templateId === selectedHtmlTemplateId ? (
+                    <CheckCircleIcon color="success" fontSize="small" />
+                  ) : (
+                    <Box sx={{ width: 18, height: 18, borderRadius: "50%", border: "1px solid", borderColor: "divider", flexShrink: 0 }} />
+                  )}
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="body2" fontWeight={700}>{c.templateName}</Typography>
+                    {c.industry && <Typography variant="caption" color="text.secondary">{c.industry}</Typography>}
+                  </Box>
+                  <Chip
+                    label={`${Math.round(c.confidence * 100)}% match`}
+                    size="small"
+                    color={c.templateId === selectedHtmlTemplateId ? "success" : "default"}
+                  />
+                </CardContent>
+              </CardActionArea>
+            </Card>
+          ))}
+
+          <Card variant="outlined">
+            <CardActionArea onClick={() => setAiRowExpanded((v) => !v)}>
+              <CardContent sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                <AiModeIcon fontSize="small" color="action" />
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="body2" fontWeight={700}>AI-proposed structure</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {htmlMatchCandidates && htmlMatchCandidates.length > 0
+                      ? "None of the above a good fit? Here's what our AI thinks your data looks like."
+                      : "No confident match in our template library — here's what our AI thinks your data looks like."}
+                  </Typography>
+                </Box>
+                <ExpandMoreIcon sx={{ transform: aiRowExpanded ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+              </CardContent>
+            </CardActionArea>
+            <Collapse in={aiRowExpanded}>
+              <Box sx={{ px: 2, pb: 2 }}>
+                {starSchema ? (
+                  <StarSchemaDiagram starSchema={starSchema} tables={tables} />
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    Couldn't infer a star schema for this dataset.
+                  </Typography>
+                )}
+                <Stack spacing={1} sx={{ mt: 2 }}>
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    startIcon={requestingCustomReport ? <CircularProgress size={16} color="inherit" /> : <CustomReportIcon />}
+                    disabled={requestingCustomReport || customReportFiled}
+                    onClick={onRequestCustomReport}
+                    sx={{ alignSelf: "flex-start" }}
+                  >
+                    {customReportFiled
+                      ? "Custom report requested"
+                      : requestingCustomReport
+                      ? "Filing request…"
+                      : "Request a custom Power BI report"}
+                  </Button>
+                  {customReportError && <Alert severity="error">{customReportError}</Alert>}
+                  {customReportFiled && (
+                    <Alert severity="success">
+                      Request filed{customReportRequestId ? ` (Request #${customReportRequestId})` : ""}, with
+                      your data's schema attached — this didn't use any of your AI credits. Our support team
+                      will review it and reach out once your custom report is ready.
+                    </Alert>
+                  )}
+                </Stack>
+              </Box>
+            </Collapse>
+          </Card>
+        </Stack>
+      )}
+    </Box>
+  );
+}
+
 // ── Schema/model/template library match (Story 3) ────────────────────────────
 
 // Below this, a library match isn't confident enough to hand straight to the client -- treated
@@ -563,6 +696,7 @@ function DataModelStep({
   onCancelGeneration,
   requestingCustomReport, customReportError, customReportFiled, customReportRequestId, onRequestCustomReport,
   onRetryMatch,
+  verifyingHtmlMatch, htmlMatchError, htmlMatchCandidates, selectedHtmlTemplateId, onSelectHtmlTemplate,
 }: {
   extractedSchema: ExtractedSchemaDto;
   modelResult: GenerateReportModelResponse | null;
@@ -583,6 +717,11 @@ function DataModelStep({
   customReportRequestId: string | null;
   onRequestCustomReport: () => void;
   onRetryMatch: () => void;
+  verifyingHtmlMatch: boolean;
+  htmlMatchError: string | null;
+  htmlMatchCandidates: HtmlTemplateCandidate[] | null;
+  selectedHtmlTemplateId: string | null;
+  onSelectHtmlTemplate: (templateId: string) => void;
 }) {
   const { elapsedSeconds, pct } = useTimedProgress(generating);
   const pastHardCeiling = elapsedSeconds > AI_HARD_CEILING_SECONDS;
@@ -634,18 +773,21 @@ function DataModelStep({
           )}
         </Stack>
       ) : modelResult ? (
-        <Box>
-          {modelResult.starSchema ? (
-            <StarSchemaDiagram starSchema={modelResult.starSchema} tables={extractedSchema.tables} />
-          ) : (
-            <Alert severity="warning">
-              Couldn't infer a star schema for this dataset — template selection and report generation
-              will still work, just without the schema preview above.
-            </Alert>
-          )}
-          <Alert severity="info" sx={{ mt: 2 }}>
-            Model generated in {modelResult.durationMs.toLocaleString()} ms.
-          </Alert>
+        <Box sx={{ mb: 3 }}>
+          <TemplateCandidatesPanel
+            verifyingHtmlMatch={verifyingHtmlMatch}
+            htmlMatchError={htmlMatchError}
+            htmlMatchCandidates={htmlMatchCandidates}
+            selectedHtmlTemplateId={selectedHtmlTemplateId}
+            onSelectHtmlTemplate={onSelectHtmlTemplate}
+            starSchema={modelResult.starSchema}
+            tables={extractedSchema.tables}
+            requestingCustomReport={requestingCustomReport}
+            customReportError={customReportError}
+            customReportFiled={customReportFiled}
+            customReportRequestId={customReportRequestId}
+            onRequestCustomReport={onRequestCustomReport}
+          />
         </Box>
       ) : null}
 
@@ -1860,10 +2002,17 @@ export function ReportGeneratorPage() {
       return;
     }
 
-    // Fire the AI blueprint generation and the model/template library match
-    // independently — a slow or failing blueprint call must not block the match.
+    // Fire the AI blueprint generation, the model/template library match, and the real HTML
+    // template match independently — a slow or failing call on any one must not block the
+    // others. Before this, AI-assisted mode never explicitly checked for a confident (>=0.85)
+    // HTML template match at all -- handleGenerateReport() would just call generateReport() with
+    // no htmlTemplateId, silently falling through to the engine's own looser 0.5-confidence
+    // auto-pick (the exact same one strict/deterministic mode uses). Firing the real check here
+    // means the "AI-assisted" wizard now actually surfaces its own ranked candidates up front,
+    // consistent with the star-schema/model-library results shown alongside it.
     void runModelGeneration();
     void runSchemaModelMatch();
+    void handleVerifyHtmlMatch();
   }
 
   async function runModelGeneration() {
@@ -2310,6 +2459,11 @@ export function ReportGeneratorPage() {
             customReportRequestId={customReportRequestId}
             onRequestCustomReport={handleRequestCustomReport}
             onRetryMatch={() => void runSchemaModelMatch()}
+            verifyingHtmlMatch={verifyingHtmlMatch}
+            htmlMatchError={htmlMatchError}
+            htmlMatchCandidates={htmlMatchCandidates}
+            selectedHtmlTemplateId={selectedHtmlTemplateId}
+            onSelectHtmlTemplate={handleSelectHtmlTemplate}
           />
         )}
 
