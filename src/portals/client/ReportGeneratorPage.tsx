@@ -1624,8 +1624,8 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
           <Stack direction="row" spacing={1} alignItems="center">
             <StrictIcon fontSize="small" />
             <Box textAlign="left">
-              <Typography variant="body2" fontWeight={700}>Strict Python Report</Typography>
-              <Typography variant="caption" color="text.secondary">Fastest — no AI involved anywhere</Typography>
+              <Typography variant="body2" fontWeight={700}>Instant Report</Typography>
+              <Typography variant="caption" color="text.secondary">No AI — strictly deterministic</Typography>
             </Box>
           </Stack>
         </ToggleButton>
