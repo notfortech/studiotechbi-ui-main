@@ -91,7 +91,9 @@ import {
   getReportModelGenerationStatus,
   pollReportModelGenerationUntilDone,
   recordAiConsent,
-  matchSchemaModel,
+  queueSchemaModelMatch,
+  getSchemaModelMatchStatus,
+  pollSchemaModelMatchUntilDone,
   recordDataUsageConsent,
   type ExtractedSchemaDto,
   type GenerateReportModelResponse,
@@ -1946,6 +1948,64 @@ export function ReportGeneratorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Resume a schema-model library match started before the user navigated away -- reached via
+  // the notification bell/toast's "View" action (BackgroundJobsContext.navigateToJob), which
+  // routes here with ?resumeMatchId=<id>. Mirrors the resumeGenerationId effect above exactly;
+  // the job's own echoed-back schema (see SchemaModelMatchJobDto.Schema) lets the wizard
+  // reconstruct its state from just the id, with no need to re-upload/re-extract the file.
+  useEffect(() => {
+    const resumeId = searchParams.get("resumeMatchId");
+    if (!resumeId) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const job = await getSchemaModelMatchStatus(resumeId);
+        if (cancelled) return;
+        if (job.schema) setExtractedSchema(job.schema);
+        setMode("ai");
+        setFlowStep("model");
+        trackJob(resumeId, "schemaModelMatch", `Model match: ${job.schema?.fileName ?? "report"}`);
+
+        if (job.status === "Completed" && job.result && job.schema) {
+          applySchemaModelMatchResult(job.result, job.schema);
+        } else if (job.status === "Failed") {
+          setMatchError(job.errorMessage || "Failed to match against the model library.");
+        } else {
+          setMatching(true);
+          const finished = await pollSchemaModelMatchUntilDone(resumeId, { intervalMs: 5000 });
+          if (cancelled) return;
+          if (finished.status === "Completed" && finished.result && job.schema) {
+            applySchemaModelMatchResult(finished.result, job.schema);
+          } else {
+            setMatchError(finished.errorMessage || "Failed to match against the model library.");
+          }
+          setMatching(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setMatchError(err instanceof Error ? err.message : "Failed to resume schema model match.");
+        }
+      } finally {
+        if (!cancelled) {
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.delete("resumeMatchId");
+              return next;
+            },
+            { replace: true }
+          );
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const steps = STEPS_BY_MODE[mode];
   const activeIndex = steps.findIndex((s) => s.key === flowStep);
 
@@ -2048,6 +2108,38 @@ export function ReportGeneratorPage() {
     }
   }
 
+  // Shared by the fresh-run path below and the resume-from-notification effect (a client who
+  // navigated away mid-match and came back via the bell/toast) so the "is this confident enough
+  // to hand to the client" check and its auto-file-a-ticket side effect never drift between the
+  // two entry points.
+  function applySchemaModelMatchResult(match: ReportMatchResult, schema: ExtractedSchemaDto) {
+    setMatchResult(match);
+
+    // Auto-file the custom-report request the moment we know the library match isn't
+    // confident enough to hand to the client -- mirrors the deterministic path's own
+    // no-match auto-file (handleGenerateReport), so the schema is logged for admin/support to
+    // build a real template from without the client having to remember to click a button. The
+    // manual "Request a custom Power BI report" button (SchemaModelMatchPanel) stays as a
+    // no-op-if-already-filed backstop, guarded by the same customReportFiled flag.
+    const confident =
+      !!match.schemaModelId
+      && !match.pendingSupportReview
+      && match.matchSource !== "AiProposedNew"
+      && match.confidence >= SCHEMA_MODEL_MATCH_CONFIDENCE_THRESHOLD;
+    if (!confident) {
+      void autoFileCustomReportRequest(
+        schema,
+        "Auto-filed: no confident schema-model library match found (AI-assisted Report Generator)."
+      );
+    }
+  }
+
+  // Queues the match and polls it to completion (via the async job/notification-bell
+  // infrastructure — queueSchemaModelMatch/pollSchemaModelMatchUntilDone) instead of holding one
+  // long request open, since an AI-escalated match can take up to koru-main's own ~330s outbound
+  // AI budget. Navigating away mid-match no longer loses the result -- BackgroundJobsProvider
+  // keeps polling regardless of which page is mounted and the client is notified on completion;
+  // see the "resumeMatchId" effect below for the resume side of that flow.
   async function runSchemaModelMatch() {
     if (!extractedSchema) return;
     setMatching(true);
@@ -2055,39 +2147,37 @@ export function ReportGeneratorPage() {
     const controller = new AbortController();
     matchAbortRef.current = controller;
     try {
-      const match = await matchSchemaModel(clientId, extractedSchema, controller.signal);
-      setMatchResult(match);
+      const job = await queueSchemaModelMatch(clientId, extractedSchema);
+      trackJob(job.matchId, "schemaModelMatch", `Model match: ${extractedSchema.fileName}`);
+      const finished = await pollSchemaModelMatchUntilDone(job.matchId, { intervalMs: 5000 });
+      if (controller.signal.aborted) return;
 
-      // Auto-file the custom-report request the moment we know the library match isn't
-      // confident enough to hand to the client -- mirrors the deterministic path's own
-      // no-match auto-file (handleGenerateReport), so the schema is logged for admin/support to
-      // build a real template from without the client having to remember to click a button. The
-      // manual "Request a custom Power BI report" button (SchemaModelMatchPanel) stays as a
-      // no-op-if-already-filed backstop, guarded by the same customReportFiled flag.
-      const confident =
-        !!match.schemaModelId
-        && !match.pendingSupportReview
-        && match.matchSource !== "AiProposedNew"
-        && match.confidence >= SCHEMA_MODEL_MATCH_CONFIDENCE_THRESHOLD;
-      if (!confident) {
+      if (finished.status === "Completed" && finished.result) {
+        applySchemaModelMatchResult(finished.result, extractedSchema);
+      } else {
+        const message = finished.errorMessage || "Failed to match against the model library.";
+        setMatchError(message);
+        // A genuine call failure (network/AI-service error) is a different situation from a
+        // clean "no confident match" result above -- still worth a ticket, so staff can tell
+        // whether the client needs a real template or just a retry, but tagged distinctly for
+        // that triage.
         void autoFileCustomReportRequest(
           extractedSchema,
-          "Auto-filed: no confident schema-model library match found (AI-assisted Report Generator)."
+          `Auto-filed: AI-assisted schema-model match failed with a technical error (${message}) — the client may just need to retry.`,
+          "GenerationError"
         );
       }
     } catch (err) {
+      if (controller.signal.aborted) return;
       const message = err instanceof Error ? err.message : "Failed to match against the model library.";
       setMatchError(message);
-      // A genuine call failure (network/AI-service error) is a different situation from a clean
-      // "no confident match" result above -- still worth a ticket, so staff can tell whether the
-      // client needs a real template or just a retry, but tagged distinctly for that triage.
       void autoFileCustomReportRequest(
         extractedSchema,
         `Auto-filed: AI-assisted schema-model match failed with a technical error (${message}) — the client may just need to retry.`,
         "GenerationError"
       );
     } finally {
-      setMatching(false);
+      if (!controller.signal.aborted) setMatching(false);
       matchAbortRef.current = null;
     }
   }

@@ -11,23 +11,24 @@ import { useNavigate } from 'react-router-dom';
 import { Snackbar, Alert, Button } from '@mui/material';
 import { useAuth } from '../auth/AuthContext';
 import { getGenerationStatus as getBlueprintGenerationStatus } from '../api/blueprintApi';
-import { getReportModelGenerationStatus } from '../api/reportDesignerApi';
+import { getReportModelGenerationStatus, getSchemaModelMatchStatus } from '../api/reportDesignerApi';
 import { ROUTES } from '../core/constants';
 
 /**
  * Tracks long-running AI jobs (Blueprint generation, the Report Generator's AI-assisted "Data
- * Model" step) across page navigation, so a client can start one, move to another screen, and
- * come back later instead of being stuck watching a progress bar for several minutes. Both
- * backend flows are already async (submit -> generationId -> poll) — this provider is what keeps
- * polling alive regardless of which page is currently mounted, since it lives in ClientLayout
- * (outside the <Outlet/> that swaps per-route) rather than inside any one wizard page.
+ * Model" step, the schema-model library match) across page navigation, so a client can start one,
+ * move to another screen, and come back later instead of being stuck watching a progress bar for
+ * several minutes. All three backend flows are already async (submit -> id -> poll) — this
+ * provider is what keeps polling alive regardless of which page is currently mounted, since it
+ * lives in ClientLayout (outside the <Outlet/> that swaps per-route) rather than inside any one
+ * wizard page.
  *
  * Persisted to localStorage (namespaced per client) so a page reload or a closed tab doesn't lose
  * track of an in-flight job either — only logging out clears it, since the key changes with
  * clientCode.
  */
 
-export type BackgroundJobType = 'blueprint' | 'reportModel';
+export type BackgroundJobType = 'blueprint' | 'reportModel' | 'schemaModelMatch';
 export type BackgroundJobStatus = 'Pending' | 'Processing' | 'Completed' | 'Failed';
 
 export interface BackgroundJob {
@@ -90,6 +91,10 @@ async function fetchJobStatus(job: BackgroundJob): Promise<NormalizedStatus> {
       errorMessage: dto.errorMessage,
       blueprintId: dto.blueprintId,
     };
+  }
+  if (job.type === 'schemaModelMatch') {
+    const dto = await getSchemaModelMatchStatus(job.id);
+    return { status: dto.status, completedAt: dto.completedAt, errorMessage: dto.errorMessage };
   }
   const dto = await getReportModelGenerationStatus(job.id);
   return { status: dto.status, completedAt: dto.completedAt, errorMessage: dto.errorMessage };
@@ -219,6 +224,8 @@ export function BackgroundJobsProvider({ children }: { children: ReactNode }) {
     (job: BackgroundJob) => {
       if (job.type === 'blueprint') {
         navigate(ROUTES.CLIENT.BLUEPRINT);
+      } else if (job.type === 'schemaModelMatch') {
+        navigate(`${ROUTES.CLIENT.REPORT_GENERATOR}?resumeMatchId=${job.id}`);
       } else {
         navigate(`${ROUTES.CLIENT.REPORT_GENERATOR}?resumeGenerationId=${job.id}`);
       }
