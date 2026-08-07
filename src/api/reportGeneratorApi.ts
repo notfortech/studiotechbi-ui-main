@@ -63,8 +63,10 @@ export interface GeneratedReport {
   warnings: string[];
   /** Row-level records projected to the matched HTML template's declared data contract — already
    * embedded inside htmlReport's own <script> block; exposed here too so the wizard can pass it
-   * straight through to Save Report without re-parsing the HTML string. */
-  rowData?: Record<string, unknown>[] | null;
+   * straight through to Save Report without re-parsing the HTML string. A flat array for a
+   * single-table template (the original shape), or an object keyed by table alias for a
+   * multi-table template (one array per declared sheet — see row_export.py). */
+  rowData?: Record<string, unknown>[] | Record<string, Record<string, unknown>[]> | null;
   htmlTemplateId?: string | null;
   htmlTemplateName?: string | null;
   htmlMatchConfidence?: number | null;
