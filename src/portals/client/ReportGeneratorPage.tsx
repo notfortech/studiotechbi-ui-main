@@ -55,8 +55,9 @@ import {
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { useState, useRef, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
+import { useBackgroundJobs } from "../../contexts/BackgroundJobsContext";
 import { ROUTES } from "../../core/constants";
 import { startReportValidation } from "../../api/reportValidationApi";
 import { saveReport } from "../../api/savedReportsApi";
@@ -84,7 +85,9 @@ import {
 } from "recharts";
 import {
   extractSchemaFromExcel,
-  generateReportModel,
+  queueReportModelGeneration,
+  getReportModelGenerationStatus,
+  pollReportModelGenerationUntilDone,
   recordAiConsent,
   matchSchemaModel,
   recordDataUsageConsent,
@@ -1651,6 +1654,8 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
 export function ReportGeneratorPage() {
   const { user, hasReportValidationAddOn } = useAuth();
   const navigate = useNavigate();
+  const { trackJob } = useBackgroundJobs();
+  const [searchParams, setSearchParams] = useSearchParams();
   const clientId = user?.clientCode ?? "";
 
   const [mode, setMode] = useState<Mode>("strict");
@@ -1741,6 +1746,64 @@ export function ReportGeneratorPage() {
     return () => { cancelled = true; };
   }, []);
 
+  // Resume a Data Model generation started before the user navigated away -- reached via the
+  // notification bell/toast's "View" action (BackgroundJobsContext.navigateToJob), which routes
+  // here with ?resumeGenerationId=<id>. The job's own echoed-back schema (see
+  // ReportModelGenerationJobDto.Schema) lets the wizard reconstruct its state from just the id,
+  // with no need to re-upload/re-extract the original file.
+  useEffect(() => {
+    const resumeId = searchParams.get("resumeGenerationId");
+    if (!resumeId) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const job = await getReportModelGenerationStatus(resumeId);
+        if (cancelled) return;
+        if (job.schema) setExtractedSchema(job.schema);
+        setMode("ai");
+        setFlowStep("model");
+        trackJob(resumeId, "reportModel", `Data model: ${job.schema?.fileName ?? "report"}`);
+
+        if (job.status === "Completed" && job.result) {
+          setModelResult(job.result);
+        } else if (job.status === "Failed") {
+          setModelError(job.errorMessage || "Model generation failed.");
+        } else {
+          setModelGenerating(true);
+          const finished = await pollReportModelGenerationUntilDone(resumeId, { intervalMs: 5000 });
+          if (cancelled) return;
+          if (finished.status === "Completed" && finished.result) {
+            setModelResult(finished.result);
+          } else {
+            setModelError(finished.errorMessage || "Model generation failed.");
+          }
+          setModelGenerating(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setModelError(err instanceof Error ? err.message : "Failed to resume report model generation.");
+        }
+      } finally {
+        if (!cancelled) {
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.delete("resumeGenerationId");
+              return next;
+            },
+            { replace: true }
+          );
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const steps = STEPS_BY_MODE[mode];
   const activeIndex = steps.findIndex((s) => s.key === flowStep);
 
@@ -1807,25 +1870,31 @@ export function ReportGeneratorPage() {
     if (!extractedSchema) return;
     setModelGenerating(true);
     setModelError(null);
+    // Not a live network abort (the queue+poll calls below don't take a signal) -- used purely
+    // as a "was this superseded/cancelled" flag so a stale poll loop doesn't clobber state after
+    // handleStartOver/handleCancelAiAnalysis fires.
     const controller = new AbortController();
     modelAbortRef.current = controller;
     try {
-      const model = await generateReportModel(
-        clientId,
-        extractedSchema,
-        undefined,
-        aiProvider,
-        controller.signal
-      );
-      setModelResult(model);
+      const job = await queueReportModelGeneration(clientId, extractedSchema, undefined, aiProvider);
+      trackJob(job.generationId, "reportModel", `Data model: ${extractedSchema.fileName}`);
+      const finished = await pollReportModelGenerationUntilDone(job.generationId, { intervalMs: 5000 });
+      if (controller.signal.aborted) return;
+      if (finished.status === "Completed" && finished.result) {
+        setModelResult(finished.result);
+      } else {
+        const message = finished.errorMessage || "Model generation failed.";
+        setModelError(`${message} This didn't use any of your AI credits.`);
+      }
     } catch (err) {
+      if (controller.signal.aborted) return;
       // The one call in this wizard that actually costs an AI credit -- but koru-main only debits
-      // the ledger after a confirmed success (see GenerateReportModelAsync's try/catch), so a
-      // thrown error here is guaranteed to mean nothing was charged. Safe to state unconditionally.
+      // the ledger after a confirmed success (see the background worker's success-only consume),
+      // so a thrown error here is guaranteed to mean nothing was charged. Safe to state unconditionally.
       const message = err instanceof Error ? err.message : "Model generation failed.";
       setModelError(`${message} This didn't use any of your AI credits.`);
     } finally {
-      setModelGenerating(false);
+      if (!controller.signal.aborted) setModelGenerating(false);
       modelAbortRef.current = null;
     }
   }

@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import { ClientTopBar } from './ClientTopBar';
 import { ClientSidebar } from './ClientSidebar';
 import { ClientViewProvider } from './ClientViewContext';
+import { BackgroundJobsProvider } from '../../contexts/BackgroundJobsContext';
 import { useResponsiveDrawer } from '../../hooks/useResponsiveDrawer';
 
 export const ClientLayout = () => {
@@ -10,6 +11,7 @@ export const ClientLayout = () => {
 
   return (
     <ClientViewProvider>
+      <BackgroundJobsProvider>
       <Box sx={{ display: 'flex', width: '100%' }}>
         <ClientTopBar open={open} isMobile={isMobile} onToggleDrawer={toggle} />
         <ClientSidebar open={open} isMobile={isMobile} onClose={close} />
@@ -31,6 +33,7 @@ export const ClientLayout = () => {
           <Outlet />
         </Box>
       </Box>
+      </BackgroundJobsProvider>
     </ClientViewProvider>
   );
 };
