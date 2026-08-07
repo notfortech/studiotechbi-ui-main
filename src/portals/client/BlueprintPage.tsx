@@ -34,6 +34,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { useClientView } from "../../layouts/client/ClientViewContext";
 import { canSelectReportClient } from "../../core/reportClientAccess";
 import { TrustBadge } from "../../components/common/TrustBadge";
+import { useBackgroundJobs } from "../../contexts/BackgroundJobsContext";
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ export function BlueprintPage() {
   const [downloading, setDownloading] = useState(false);
 
   const { job, isPolling, timedOut } = useBlueprintGeneration(activeGenerationId);
+  const { trackJob } = useBackgroundJobs();
 
   const loadBlueprints = useCallback(async () => {
     if (!tenantId) return;
@@ -111,6 +113,7 @@ export function BlueprintPage() {
       });
 
       setActiveGenerationId(result.generationId);
+      trackJob(result.generationId, "blueprint", `Blueprint: ${industry.trim() || "Untitled"}`);
 
       setBusinessCapability("");
       setBusinessGoal("");

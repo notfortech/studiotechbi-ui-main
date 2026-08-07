@@ -365,30 +365,77 @@ export async function recordDataUsageConsent(
   }
 }
 
+export type ReportModelGenerationStatus = 'Pending' | 'Processing' | 'Completed' | 'Failed';
+
 /**
- * Bounded by AI_MATCH_TIMEOUT_MS and cancellable via `signal` — see matchSchemaModel.
+ * Poll response for an async Data Model generation job. `schema` is echoed back from the
+ * original request -- lets a caller who only has a generationId (e.g. resuming from a
+ * notification click after navigating away) reconstruct the wizard's schema state without
+ * re-uploading or re-extracting the source file.
  */
-export async function generateReportModel(
+export interface ReportModelGenerationJob {
+  generationId: string;
+  requestId: string;
+  status: ReportModelGenerationStatus;
+  schema?: ExtractedSchemaDto;
+  result?: GenerateReportModelResponse;
+  errorMessage?: string;
+  createdAt: string;
+  processingStartedAt?: string;
+  completedAt?: string;
+}
+
+/**
+ * Queues the AI-assisted "Data Model" generation and returns immediately with a generationId to
+ * poll, instead of blocking the request for the ~330s the LLM call can take — lets the client
+ * navigate away from the wizard and come back later. See getReportModelGenerationStatus.
+ */
+export async function queueReportModelGeneration(
   clientId: string,
   schema: ExtractedSchemaDto,
   preferredTheme?: string,
-  aiProvider?: AiProvider,
-  signal?: AbortSignal
-): Promise<GenerateReportModelResponse> {
+  aiProvider?: AiProvider
+): Promise<ReportModelGenerationJob> {
   try {
-    const res = await apiAxiosInstance.post<ApiResponse<GenerateReportModelResponse>>(
+    const res = await apiAxiosInstance.post<ApiResponse<ReportModelGenerationJob>>(
       '/report-designer/generate-model',
       {
         clientId,
         schema,
         ...(preferredTheme ? { preferredTheme } : {}),
         ...(aiProvider ? { aiProvider } : {}),
-      },
-      { timeout: AI_MATCH_TIMEOUT_MS, signal }
+      }
     );
     return extractData(res.data);
   } catch (err) {
-    throw aiCallError(err, 'Failed to generate report model.');
+    throw aiCallError(err, 'Failed to queue report model generation.');
+  }
+}
+
+/** Poll for the status/result of a queued Data Model generation job. */
+export async function getReportModelGenerationStatus(generationId: string): Promise<ReportModelGenerationJob> {
+  const res = await apiAxiosInstance.get<ApiResponse<ReportModelGenerationJob>>(
+    `/report-designer/generate-model/${generationId}`
+  );
+  return extractData(res.data);
+}
+
+/** Imperative poll-until-done for a queued Data Model generation job, mirroring
+ * reportGeneratorApi's pollReportGenerationJobUntilDone — used while the wizard stays on the
+ * model step so modelResult/modelError keep updating live, same as the old synchronous call did. */
+export async function pollReportModelGenerationUntilDone(
+  generationId: string,
+  options?: { intervalMs?: number; timeoutMs?: number }
+): Promise<ReportModelGenerationJob> {
+  const intervalMs = options?.intervalMs ?? 5000;
+  const timeoutMs = options?.timeoutMs ?? 20 * 60 * 1000;
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    const status = await getReportModelGenerationStatus(generationId);
+    if (status.status === 'Completed' || status.status === 'Failed') return status;
+    if (Date.now() >= deadline) throw new Error('Timed out waiting for report model generation to finish.');
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
 }
 
