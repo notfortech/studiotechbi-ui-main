@@ -2355,12 +2355,14 @@ export function ReportGeneratorPage() {
                 </Button>
               </Stack>
             )}
-            {selectedHtmlTemplateId ? (
-              <Alert severity="success">
-                Using the matched template above — no theme needed. Click "Generate Report" below
-                to continue.
+            {selectedHtmlTemplateId && (
+              <Alert severity="success" sx={{ mb: 2 }}>
+                Using the matched interactive template above. Pick a colour theme below to apply
+                your brand colours to it, or continue with its default look — a theme pick isn't
+                required to generate.
               </Alert>
-            ) : strictAwaitingVerify ? null : (
+            )}
+            {strictAwaitingVerify ? null : (
               <TemplateStep
                 modelResult={modelResult}
                 selected={selectedTheme}
@@ -2430,21 +2432,9 @@ export function ReportGeneratorPage() {
               variant="contained"
               disabled={!canProceedModel || reportGenerating}
               startIcon={reportGenerating ? <CircularProgress size={16} color="inherit" /> : undefined}
-              onClick={() => {
-                // A confirmed HTML template match means there's nothing left to pick -- skip the
-                // theme-picker step (it's now only for the no-match fallback path) and generate
-                // straight away.
-                if (selectedHtmlTemplateId) void handleGenerateReport();
-                else setFlowStep("template");
-              }}
+              onClick={() => setFlowStep("template")}
             >
-              {modelGenerating
-                ? "Generating model…"
-                : reportGenerating
-                ? reportGeneratingLabel
-                : selectedHtmlTemplateId
-                ? "Generate Report"
-                : "Next"}
+              {modelGenerating ? "Generating model…" : "Next"}
             </Button>
           )}
           {flowStep === "template" && (
