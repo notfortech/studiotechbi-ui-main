@@ -134,8 +134,22 @@ export const HtmlTemplatesPage = () => {
       setPendingDeleteId(null);
       await loadTemplates();
       setSnackbar({ open: true, message: 'Template unlisted — its files remain in storage.', severity: 'success' });
-    } catch {
-      setSnackbar({ open: true, message: 'Failed to delete template', severity: 'error' });
+    } catch (err) {
+      // A 404 means the id was already gone from index.json (stale row in this list, or a
+      // previous delete attempt actually succeeded) rather than a genuine failure -- refresh so
+      // the table reflects reality instead of leaving the client to guess why nothing changed.
+      const axiosErr = err as { response?: { status?: number } };
+      if (axiosErr.response?.status === 404) {
+        setPendingDeleteId(null);
+        await loadTemplates();
+        setSnackbar({
+          open: true,
+          message: 'That template was already unlisted — refreshed the list.',
+          severity: 'info',
+        });
+      } else {
+        setSnackbar({ open: true, message: 'Failed to delete template', severity: 'error' });
+      }
     } finally {
       setDeleting(false);
     }
