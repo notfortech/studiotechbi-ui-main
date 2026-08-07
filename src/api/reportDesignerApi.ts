@@ -321,28 +321,72 @@ export async function recordAiConsent(
   }
 }
 
+export type SchemaModelMatchStatus = 'Pending' | 'Processing' | 'Completed' | 'Failed';
+
 /**
- * Scores the extracted schema against the reference SchemaModel library (deterministic
- * name-overlap first, escalating to AI semantic matching below a confidence gate) and
- * persists the result as a ReportMatchDraft. Requires prior consent, same as generateReportModel.
- *
- * Bounded by AI_MATCH_TIMEOUT_MS and cancellable via `signal` — the deterministic path is
- * fast, but an AI-escalated match can take up to koru-main's own ~330s outbound budget.
+ * Poll response for an async schema-model library match job. `schema` is echoed back from the
+ * original request -- lets a caller who only has a matchId (e.g. resuming from a notification
+ * click after navigating away) reconstruct the wizard's schema state without re-uploading or
+ * re-extracting the source file.
  */
-export async function matchSchemaModel(
+export interface SchemaModelMatchJob {
+  matchId: string;
+  requestId: string;
+  status: SchemaModelMatchStatus;
+  schema?: ExtractedSchemaDto;
+  result?: ReportMatchResult;
+  errorMessage?: string;
+  createdAt: string;
+  processingStartedAt?: string;
+  completedAt?: string;
+}
+
+/**
+ * Queues a match of the extracted schema against the reference SchemaModel library
+ * (deterministic name-overlap first, escalating to AI semantic matching below a confidence gate)
+ * and returns immediately with a matchId to poll, instead of blocking the request for the ~330s
+ * an AI-escalated match can take — lets the client navigate away from the wizard and come back
+ * later. See getSchemaModelMatchStatus. Requires prior consent, same as generateReportModel.
+ */
+export async function queueSchemaModelMatch(
   clientId: string,
-  schema: ExtractedSchemaDto,
-  signal?: AbortSignal
-): Promise<ReportMatchResult> {
+  schema: ExtractedSchemaDto
+): Promise<SchemaModelMatchJob> {
   try {
-    const res = await apiAxiosInstance.post<ApiResponse<ReportMatchResult>>(
+    const res = await apiAxiosInstance.post<ApiResponse<SchemaModelMatchJob>>(
       '/report-designer/match',
-      { clientId, schema },
-      { timeout: AI_MATCH_TIMEOUT_MS, signal }
+      { clientId, schema }
     );
     return extractData(res.data);
   } catch (err) {
-    throw aiCallError(err, 'Failed to match schema against the model directory.');
+    throw aiCallError(err, 'Failed to queue schema model match.');
+  }
+}
+
+/** Poll for the status/result of a queued schema-model match job. */
+export async function getSchemaModelMatchStatus(matchId: string): Promise<SchemaModelMatchJob> {
+  const res = await apiAxiosInstance.get<ApiResponse<SchemaModelMatchJob>>(
+    `/report-designer/match/${matchId}`
+  );
+  return extractData(res.data);
+}
+
+/** Imperative poll-until-done for a queued schema-model match job, mirroring
+ * pollReportModelGenerationUntilDone — used while the wizard stays on the model step so
+ * matchResult/matchError keep updating live, same as the old synchronous call did. */
+export async function pollSchemaModelMatchUntilDone(
+  matchId: string,
+  options?: { intervalMs?: number; timeoutMs?: number }
+): Promise<SchemaModelMatchJob> {
+  const intervalMs = options?.intervalMs ?? 5000;
+  const timeoutMs = options?.timeoutMs ?? 20 * 60 * 1000;
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    const status = await getSchemaModelMatchStatus(matchId);
+    if (status.status === 'Completed' || status.status === 'Failed') return status;
+    if (Date.now() >= deadline) throw new Error('Timed out waiting for schema model match to finish.');
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
 }
 

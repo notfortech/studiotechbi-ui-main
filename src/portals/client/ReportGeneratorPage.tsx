@@ -15,6 +15,7 @@ import {
   Alert,
   CircularProgress,
   LinearProgress,
+  Collapse,
   FormControl,
   InputLabel,
   Select,
@@ -51,6 +52,7 @@ import {
   SupportAgent as CustomReportIcon,
   PictureAsPdf as PdfExportIcon,
   FileDownloadOutlined as DownloadDatasetIcon,
+  ExpandMore as ExpandMoreIcon,
 } from "@mui/icons-material";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -89,7 +91,9 @@ import {
   getReportModelGenerationStatus,
   pollReportModelGenerationUntilDone,
   recordAiConsent,
-  matchSchemaModel,
+  queueSchemaModelMatch,
+  getSchemaModelMatchStatus,
+  pollSchemaModelMatchUntilDone,
   recordDataUsageConsent,
   type ExtractedSchemaDto,
   type GenerateReportModelResponse,
@@ -376,6 +380,137 @@ function StarSchemaDiagram({ starSchema, tables }: { starSchema: StarSchema; tab
   );
 }
 
+// ── Unified AI-assisted template candidates — real HTML template matches plus the AI-proposed
+// structure as a single list, so a client sees "here's what's close" and "here's our AI's read
+// on your data" together instead of as two disconnected panels. The AI-proposed row is purely
+// informational (its expandable detail reuses StarSchemaDiagram) and routes to the existing
+// custom-Power-BI-report request — it never attempts to render a report on its own. ──────────
+
+function TemplateCandidatesPanel({
+  verifyingHtmlMatch, htmlMatchError, htmlMatchCandidates, selectedHtmlTemplateId, onSelectHtmlTemplate,
+  starSchema, tables,
+  requestingCustomReport, customReportError, customReportFiled, customReportRequestId, onRequestCustomReport,
+}: {
+  verifyingHtmlMatch: boolean;
+  htmlMatchError: string | null;
+  htmlMatchCandidates: HtmlTemplateCandidate[] | null;
+  selectedHtmlTemplateId: string | null;
+  onSelectHtmlTemplate: (templateId: string) => void;
+  starSchema: StarSchema | null;
+  tables: TableInfo[];
+  requestingCustomReport: boolean;
+  customReportError: string | null;
+  customReportFiled: boolean;
+  customReportRequestId: string | null;
+  onRequestCustomReport: () => void;
+}) {
+  const [aiRowExpanded, setAiRowExpanded] = useState(false);
+
+  return (
+    <Box>
+      <Typography variant="h6" fontWeight={700} gutterBottom>Report Template Match</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Your data is checked against our library of interactive report templates.
+      </Typography>
+
+      {htmlMatchError && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          We hit a technical issue checking for a template match ({htmlMatchError}) — this didn't
+          use any of your AI credits. You can still request a custom Power BI report below.
+        </Alert>
+      )}
+
+      {verifyingHtmlMatch ? (
+        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ py: 2 }}>
+          <CircularProgress size={20} />
+          <Typography variant="body2" color="text.secondary">Checking for a template match…</Typography>
+        </Stack>
+      ) : (
+        <Stack spacing={1.5}>
+          {htmlMatchCandidates?.map((c) => (
+            <Card
+              key={c.templateId}
+              variant="outlined"
+              sx={{ borderColor: c.templateId === selectedHtmlTemplateId ? "success.main" : "divider" }}
+            >
+              <CardActionArea onClick={() => onSelectHtmlTemplate(c.templateId)}>
+                <CardContent sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                  {c.templateId === selectedHtmlTemplateId ? (
+                    <CheckCircleIcon color="success" fontSize="small" />
+                  ) : (
+                    <Box sx={{ width: 18, height: 18, borderRadius: "50%", border: "1px solid", borderColor: "divider", flexShrink: 0 }} />
+                  )}
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="body2" fontWeight={700}>{c.templateName}</Typography>
+                    {c.industry && <Typography variant="caption" color="text.secondary">{c.industry}</Typography>}
+                  </Box>
+                  <Chip
+                    label={`${Math.round(c.confidence * 100)}% match`}
+                    size="small"
+                    color={c.templateId === selectedHtmlTemplateId ? "success" : "default"}
+                  />
+                </CardContent>
+              </CardActionArea>
+            </Card>
+          ))}
+
+          <Card variant="outlined">
+            <CardActionArea onClick={() => setAiRowExpanded((v) => !v)}>
+              <CardContent sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                <AiModeIcon fontSize="small" color="action" />
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="body2" fontWeight={700}>AI-proposed structure</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {htmlMatchCandidates && htmlMatchCandidates.length > 0
+                      ? "None of the above a good fit? Here's what our AI thinks your data looks like."
+                      : "No confident match in our template library — here's what our AI thinks your data looks like."}
+                  </Typography>
+                </Box>
+                <ExpandMoreIcon sx={{ transform: aiRowExpanded ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+              </CardContent>
+            </CardActionArea>
+            <Collapse in={aiRowExpanded}>
+              <Box sx={{ px: 2, pb: 2 }}>
+                {starSchema ? (
+                  <StarSchemaDiagram starSchema={starSchema} tables={tables} />
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    Couldn't infer a star schema for this dataset.
+                  </Typography>
+                )}
+                <Stack spacing={1} sx={{ mt: 2 }}>
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    startIcon={requestingCustomReport ? <CircularProgress size={16} color="inherit" /> : <CustomReportIcon />}
+                    disabled={requestingCustomReport || customReportFiled}
+                    onClick={onRequestCustomReport}
+                    sx={{ alignSelf: "flex-start" }}
+                  >
+                    {customReportFiled
+                      ? "Custom report requested"
+                      : requestingCustomReport
+                      ? "Filing request…"
+                      : "Request a custom Power BI report"}
+                  </Button>
+                  {customReportError && <Alert severity="error">{customReportError}</Alert>}
+                  {customReportFiled && (
+                    <Alert severity="success">
+                      Request filed{customReportRequestId ? ` (Request #${customReportRequestId})` : ""}, with
+                      your data's schema attached — this didn't use any of your AI credits. Our support team
+                      will review it and reach out once your custom report is ready.
+                    </Alert>
+                  )}
+                </Stack>
+              </Box>
+            </Collapse>
+          </Card>
+        </Stack>
+      )}
+    </Box>
+  );
+}
+
 // ── Schema/model/template library match (Story 3) ────────────────────────────
 
 // Below this, a library match isn't confident enough to hand straight to the client -- treated
@@ -563,6 +698,7 @@ function DataModelStep({
   onCancelGeneration,
   requestingCustomReport, customReportError, customReportFiled, customReportRequestId, onRequestCustomReport,
   onRetryMatch,
+  verifyingHtmlMatch, htmlMatchError, htmlMatchCandidates, selectedHtmlTemplateId, onSelectHtmlTemplate,
 }: {
   extractedSchema: ExtractedSchemaDto;
   modelResult: GenerateReportModelResponse | null;
@@ -583,6 +719,11 @@ function DataModelStep({
   customReportRequestId: string | null;
   onRequestCustomReport: () => void;
   onRetryMatch: () => void;
+  verifyingHtmlMatch: boolean;
+  htmlMatchError: string | null;
+  htmlMatchCandidates: HtmlTemplateCandidate[] | null;
+  selectedHtmlTemplateId: string | null;
+  onSelectHtmlTemplate: (templateId: string) => void;
 }) {
   const { elapsedSeconds, pct } = useTimedProgress(generating);
   const pastHardCeiling = elapsedSeconds > AI_HARD_CEILING_SECONDS;
@@ -634,18 +775,21 @@ function DataModelStep({
           )}
         </Stack>
       ) : modelResult ? (
-        <Box>
-          {modelResult.starSchema ? (
-            <StarSchemaDiagram starSchema={modelResult.starSchema} tables={extractedSchema.tables} />
-          ) : (
-            <Alert severity="warning">
-              Couldn't infer a star schema for this dataset — template selection and report generation
-              will still work, just without the schema preview above.
-            </Alert>
-          )}
-          <Alert severity="info" sx={{ mt: 2 }}>
-            Model generated in {modelResult.durationMs.toLocaleString()} ms.
-          </Alert>
+        <Box sx={{ mb: 3 }}>
+          <TemplateCandidatesPanel
+            verifyingHtmlMatch={verifyingHtmlMatch}
+            htmlMatchError={htmlMatchError}
+            htmlMatchCandidates={htmlMatchCandidates}
+            selectedHtmlTemplateId={selectedHtmlTemplateId}
+            onSelectHtmlTemplate={onSelectHtmlTemplate}
+            starSchema={modelResult.starSchema}
+            tables={extractedSchema.tables}
+            requestingCustomReport={requestingCustomReport}
+            customReportError={customReportError}
+            customReportFiled={customReportFiled}
+            customReportRequestId={customReportRequestId}
+            onRequestCustomReport={onRequestCustomReport}
+          />
         </Box>
       ) : null}
 
@@ -1804,6 +1948,64 @@ export function ReportGeneratorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Resume a schema-model library match started before the user navigated away -- reached via
+  // the notification bell/toast's "View" action (BackgroundJobsContext.navigateToJob), which
+  // routes here with ?resumeMatchId=<id>. Mirrors the resumeGenerationId effect above exactly;
+  // the job's own echoed-back schema (see SchemaModelMatchJobDto.Schema) lets the wizard
+  // reconstruct its state from just the id, with no need to re-upload/re-extract the file.
+  useEffect(() => {
+    const resumeId = searchParams.get("resumeMatchId");
+    if (!resumeId) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const job = await getSchemaModelMatchStatus(resumeId);
+        if (cancelled) return;
+        if (job.schema) setExtractedSchema(job.schema);
+        setMode("ai");
+        setFlowStep("model");
+        trackJob(resumeId, "schemaModelMatch", `Model match: ${job.schema?.fileName ?? "report"}`);
+
+        if (job.status === "Completed" && job.result && job.schema) {
+          applySchemaModelMatchResult(job.result, job.schema);
+        } else if (job.status === "Failed") {
+          setMatchError(job.errorMessage || "Failed to match against the model library.");
+        } else {
+          setMatching(true);
+          const finished = await pollSchemaModelMatchUntilDone(resumeId, { intervalMs: 5000 });
+          if (cancelled) return;
+          if (finished.status === "Completed" && finished.result && job.schema) {
+            applySchemaModelMatchResult(finished.result, job.schema);
+          } else {
+            setMatchError(finished.errorMessage || "Failed to match against the model library.");
+          }
+          setMatching(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setMatchError(err instanceof Error ? err.message : "Failed to resume schema model match.");
+        }
+      } finally {
+        if (!cancelled) {
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.delete("resumeMatchId");
+              return next;
+            },
+            { replace: true }
+          );
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const steps = STEPS_BY_MODE[mode];
   const activeIndex = steps.findIndex((s) => s.key === flowStep);
 
@@ -1860,10 +2062,17 @@ export function ReportGeneratorPage() {
       return;
     }
 
-    // Fire the AI blueprint generation and the model/template library match
-    // independently — a slow or failing blueprint call must not block the match.
+    // Fire the AI blueprint generation, the model/template library match, and the real HTML
+    // template match independently — a slow or failing call on any one must not block the
+    // others. Before this, AI-assisted mode never explicitly checked for a confident (>=0.85)
+    // HTML template match at all -- handleGenerateReport() would just call generateReport() with
+    // no htmlTemplateId, silently falling through to the engine's own looser 0.5-confidence
+    // auto-pick (the exact same one strict/deterministic mode uses). Firing the real check here
+    // means the "AI-assisted" wizard now actually surfaces its own ranked candidates up front,
+    // consistent with the star-schema/model-library results shown alongside it.
     void runModelGeneration();
     void runSchemaModelMatch();
+    void handleVerifyHtmlMatch();
   }
 
   async function runModelGeneration() {
@@ -1899,6 +2108,38 @@ export function ReportGeneratorPage() {
     }
   }
 
+  // Shared by the fresh-run path below and the resume-from-notification effect (a client who
+  // navigated away mid-match and came back via the bell/toast) so the "is this confident enough
+  // to hand to the client" check and its auto-file-a-ticket side effect never drift between the
+  // two entry points.
+  function applySchemaModelMatchResult(match: ReportMatchResult, schema: ExtractedSchemaDto) {
+    setMatchResult(match);
+
+    // Auto-file the custom-report request the moment we know the library match isn't
+    // confident enough to hand to the client -- mirrors the deterministic path's own
+    // no-match auto-file (handleGenerateReport), so the schema is logged for admin/support to
+    // build a real template from without the client having to remember to click a button. The
+    // manual "Request a custom Power BI report" button (SchemaModelMatchPanel) stays as a
+    // no-op-if-already-filed backstop, guarded by the same customReportFiled flag.
+    const confident =
+      !!match.schemaModelId
+      && !match.pendingSupportReview
+      && match.matchSource !== "AiProposedNew"
+      && match.confidence >= SCHEMA_MODEL_MATCH_CONFIDENCE_THRESHOLD;
+    if (!confident) {
+      void autoFileCustomReportRequest(
+        schema,
+        "Auto-filed: no confident schema-model library match found (AI-assisted Report Generator)."
+      );
+    }
+  }
+
+  // Queues the match and polls it to completion (via the async job/notification-bell
+  // infrastructure — queueSchemaModelMatch/pollSchemaModelMatchUntilDone) instead of holding one
+  // long request open, since an AI-escalated match can take up to koru-main's own ~330s outbound
+  // AI budget. Navigating away mid-match no longer loses the result -- BackgroundJobsProvider
+  // keeps polling regardless of which page is mounted and the client is notified on completion;
+  // see the "resumeMatchId" effect below for the resume side of that flow.
   async function runSchemaModelMatch() {
     if (!extractedSchema) return;
     setMatching(true);
@@ -1906,39 +2147,37 @@ export function ReportGeneratorPage() {
     const controller = new AbortController();
     matchAbortRef.current = controller;
     try {
-      const match = await matchSchemaModel(clientId, extractedSchema, controller.signal);
-      setMatchResult(match);
+      const job = await queueSchemaModelMatch(clientId, extractedSchema);
+      trackJob(job.matchId, "schemaModelMatch", `Model match: ${extractedSchema.fileName}`);
+      const finished = await pollSchemaModelMatchUntilDone(job.matchId, { intervalMs: 5000 });
+      if (controller.signal.aborted) return;
 
-      // Auto-file the custom-report request the moment we know the library match isn't
-      // confident enough to hand to the client -- mirrors the deterministic path's own
-      // no-match auto-file (handleGenerateReport), so the schema is logged for admin/support to
-      // build a real template from without the client having to remember to click a button. The
-      // manual "Request a custom Power BI report" button (SchemaModelMatchPanel) stays as a
-      // no-op-if-already-filed backstop, guarded by the same customReportFiled flag.
-      const confident =
-        !!match.schemaModelId
-        && !match.pendingSupportReview
-        && match.matchSource !== "AiProposedNew"
-        && match.confidence >= SCHEMA_MODEL_MATCH_CONFIDENCE_THRESHOLD;
-      if (!confident) {
+      if (finished.status === "Completed" && finished.result) {
+        applySchemaModelMatchResult(finished.result, extractedSchema);
+      } else {
+        const message = finished.errorMessage || "Failed to match against the model library.";
+        setMatchError(message);
+        // A genuine call failure (network/AI-service error) is a different situation from a
+        // clean "no confident match" result above -- still worth a ticket, so staff can tell
+        // whether the client needs a real template or just a retry, but tagged distinctly for
+        // that triage.
         void autoFileCustomReportRequest(
           extractedSchema,
-          "Auto-filed: no confident schema-model library match found (AI-assisted Report Generator)."
+          `Auto-filed: AI-assisted schema-model match failed with a technical error (${message}) — the client may just need to retry.`,
+          "GenerationError"
         );
       }
     } catch (err) {
+      if (controller.signal.aborted) return;
       const message = err instanceof Error ? err.message : "Failed to match against the model library.";
       setMatchError(message);
-      // A genuine call failure (network/AI-service error) is a different situation from a clean
-      // "no confident match" result above -- still worth a ticket, so staff can tell whether the
-      // client needs a real template or just a retry, but tagged distinctly for that triage.
       void autoFileCustomReportRequest(
         extractedSchema,
         `Auto-filed: AI-assisted schema-model match failed with a technical error (${message}) — the client may just need to retry.`,
         "GenerationError"
       );
     } finally {
-      setMatching(false);
+      if (!controller.signal.aborted) setMatching(false);
       matchAbortRef.current = null;
     }
   }
@@ -2310,6 +2549,11 @@ export function ReportGeneratorPage() {
             customReportRequestId={customReportRequestId}
             onRequestCustomReport={handleRequestCustomReport}
             onRetryMatch={() => void runSchemaModelMatch()}
+            verifyingHtmlMatch={verifyingHtmlMatch}
+            htmlMatchError={htmlMatchError}
+            htmlMatchCandidates={htmlMatchCandidates}
+            selectedHtmlTemplateId={selectedHtmlTemplateId}
+            onSelectHtmlTemplate={handleSelectHtmlTemplate}
           />
         )}
 
