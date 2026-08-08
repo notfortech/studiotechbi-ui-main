@@ -94,6 +94,7 @@ import {
   queueSchemaModelMatch,
   getSchemaModelMatchStatus,
   pollSchemaModelMatchUntilDone,
+  downloadExtractedSchema,
   recordDataUsageConsent,
   type ExtractedSchemaDto,
   type GenerateReportModelResponse,
@@ -522,7 +523,7 @@ const SCHEMA_MODEL_MATCH_CONFIDENCE_THRESHOLD = 0.85;
 function SchemaModelMatchPanel({
   matching, matchError, matchResult, dataConsentRecordedAt, dataConsentDeciding, dataConsentError, onOpenConsent,
   requestingCustomReport, customReportError, customReportFiled, customReportRequestId, onRequestCustomReport,
-  onRetryMatch,
+  onRetryMatch, extractedSchema,
 }: {
   matching: boolean;
   matchError: string | null;
@@ -537,6 +538,7 @@ function SchemaModelMatchPanel({
   customReportRequestId: string | null;
   onRequestCustomReport: () => void;
   onRetryMatch: () => void;
+  extractedSchema: ExtractedSchemaDto | null;
 }) {
   // "AiProposedNew" means nothing in the library fit, so the AI drafted a brand-new model on the
   // spot -- exactly the repeated-AI-credit-spend case we want to avoid. Treated as "no confident
@@ -551,20 +553,32 @@ function SchemaModelMatchPanel({
 
   const customReportAction = (
     <Stack spacing={1} sx={{ mt: 2 }}>
-      <Button
-        variant="outlined"
-        color="secondary"
-        startIcon={requestingCustomReport ? <CircularProgress size={16} color="inherit" /> : <CustomReportIcon />}
-        disabled={requestingCustomReport || customReportFiled}
-        onClick={onRequestCustomReport}
-        sx={{ alignSelf: "flex-start" }}
-      >
-        {customReportFiled
-          ? "Custom report requested"
-          : requestingCustomReport
-          ? "Filing request…"
-          : "Request a custom Power BI report"}
-      </Button>
+      <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
+        <Button
+          variant="outlined"
+          color="secondary"
+          startIcon={requestingCustomReport ? <CircularProgress size={16} color="inherit" /> : <CustomReportIcon />}
+          disabled={requestingCustomReport || customReportFiled}
+          onClick={onRequestCustomReport}
+          sx={{ alignSelf: "flex-start" }}
+        >
+          {customReportFiled
+            ? "Custom report requested"
+            : requestingCustomReport
+            ? "Filing request…"
+            : "Request a custom Power BI report"}
+        </Button>
+        {extractedSchema && (
+          <Button
+            variant="outlined"
+            startIcon={<DownloadDatasetIcon />}
+            onClick={() => downloadExtractedSchema(extractedSchema)}
+            sx={{ alignSelf: "flex-start" }}
+          >
+            Download Schema
+          </Button>
+        )}
+      </Stack>
       {customReportError && <Alert severity="error">{customReportError}</Alert>}
       {customReportFiled && (
         <Alert severity="success">
@@ -808,6 +822,7 @@ function DataModelStep({
           customReportRequestId={customReportRequestId}
           onRequestCustomReport={onRequestCustomReport}
           onRetryMatch={onRetryMatch}
+          extractedSchema={extractedSchema}
         />
       )}
     </Box>
@@ -2131,6 +2146,16 @@ export function ReportGeneratorPage() {
         schema,
         "Auto-filed: no confident schema-model library match found (AI-assisted Report Generator)."
       );
+      // The client's own copy of what was checked -- fires once, right when the "not confident"
+      // result first lands, whether that's from a live run in this session or from resuming a
+      // completed job via the notification bell's "Ready to view" (see the resumeMatchId effect
+      // below). Best-effort: a blocked popup/download must never surface as an error here.
+      try {
+        downloadExtractedSchema(schema);
+      } catch {
+        // Best-effort -- see comment above; the manual "Download Schema" button in
+        // SchemaModelMatchPanel covers a blocked/missed automatic download.
+      }
     }
   }
 
@@ -2481,7 +2506,13 @@ export function ReportGeneratorPage() {
   // picker must stay hidden until that check has actually run. Showing it up front let a user pick
   // a theme that's immediately thrown away the moment a template match is confirmed.
   const strictAwaitingVerify = mode === "strict" && !selectedHtmlTemplateId && htmlMatchCandidates === null;
-  const canProceedTemplate = (selectedTheme !== null || !!selectedHtmlTemplateId) && !reportGenerating;
+  // !!uploadedFile matters here specifically for the "resumed from a notification" case: a
+  // completed reportModel/schemaModelMatch job only ever echoes back the extracted schema, never
+  // the original file bytes (those live only in this component's in-memory state, lost on a full
+  // remount) -- without this check, "Generate Report" stayed clickable but silently did nothing
+  // (handleGenerateReport's own `if (!uploadedFile) return;` guard). See the re-upload banner
+  // below, which is the only way forward once resumed without the file in hand.
+  const canProceedTemplate = (selectedTheme !== null || !!selectedHtmlTemplateId) && !reportGenerating && !!uploadedFile;
   const reportGeneratingLabel = uploadProgressPct !== null
     ? `Uploading… ${uploadProgressPct}%`
     : "Generating report…";
@@ -2514,6 +2545,36 @@ export function ReportGeneratorPage() {
         </Stepper>
 
         {mode === "ai" && <LowCreditsAlert balance={creditBalance} />}
+
+        {/* Resumed from a "Ready to view" notification click without the original file in hand
+            -- a completed background job only ever echoes back the extracted schema, never the
+            file bytes, which live only in this component's memory and don't survive a full
+            remount. Match results/schema stay visible below either way; only report generation
+            itself needs the file back. */}
+        {flowStep !== "connect" && extractedSchema && !uploadedFile && (
+          <Alert
+            severity="warning"
+            sx={{ mb: 3 }}
+            action={
+              <Button component="label" size="small" variant="outlined" color="inherit">
+                Re-upload file
+                <input
+                  type="file"
+                  hidden
+                  accept=".xlsx,.xls,.csv"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) setUploadedFile(f);
+                  }}
+                />
+              </Button>
+            }
+          >
+            Your schema and match results were restored, but the original file (
+            <strong>{extractedSchema.fileName}</strong>) isn't available in this browser session —
+            re-upload it (or an updated version) to generate the report.
+          </Alert>
+        )}
 
         {flowStep === "connect" && (
           <>

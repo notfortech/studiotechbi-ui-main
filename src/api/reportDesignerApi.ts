@@ -321,6 +321,28 @@ export async function recordAiConsent(
   }
 }
 
+/**
+ * Triggers a client-side download of the extracted schema as pretty-printed JSON -- used when a
+ * schema-model library match comes back without a confident hit, so the client has something
+ * concrete to look at/share locally, mirroring what's already logged server-side for staff via
+ * requestCustomPowerBiReport's SchemaSnapshotJson. No backend call -- the schema is already in
+ * hand client-side. Same createObjectURL/<a download>/revokeObjectURL pattern used throughout
+ * this app (see reportGeneratorApi.ts's downloadBlendedDataset).
+ */
+export function downloadExtractedSchema(schema: ExtractedSchemaDto): void {
+  const json = JSON.stringify(schema, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  const safeName = (schema.fileName || 'schema').replace(/\.[^.]+$/, '');
+  a.download = `${safeName}-schema.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export type SchemaModelMatchStatus = 'Pending' | 'Processing' | 'Completed' | 'Failed';
 
 /**
